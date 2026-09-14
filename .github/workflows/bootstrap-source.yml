@@ -1,0 +1,37 @@
+name: Bootstrap LunAstra source
+
+on:
+  push:
+    paths:
+      - bootstrap-source.zip
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify source archive
+        shell: bash
+        run: echo "ac935d98d22cba43081518b4e3e506b97d1d5ddd139dfc1b239e7c37f9970880  bootstrap-source.zip" | sha256sum -c -
+      - name: Extract source tree
+        shell: bash
+        run: |
+          rm -rf .bootstrap
+          mkdir .bootstrap
+          unzip -q bootstrap-source.zip -d .bootstrap
+          test -f .bootstrap/LunAstra/README.md
+          cp -a .bootstrap/LunAstra/. .
+          rm -rf .bootstrap bootstrap-source.zip .github/workflows/bootstrap-source.yml
+      - name: Commit source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Publish LunAstra 3.2.0 fixed-seven source"
+          git push origin HEAD:main

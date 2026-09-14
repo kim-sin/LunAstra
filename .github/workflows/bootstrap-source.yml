@@ -17,17 +17,17 @@ jobs:
       - name: Rebuild and verify source archive
         shell: bash
         run: |
-          cat bootstrap-source.b64.* | base64 -d > bootstrap-source.zip
-          echo "ac935d98d22cba43081518b4e3e506b97d1d5ddd139dfc1b239e7c37f9970880  bootstrap-source.zip" | sha256sum -c -
+          cat bootstrap-source.b64.* | base64 -d > bootstrap-source.tar.xz
+          echo "c710b79c4eff3b0531441d31d678ad1dd2381a34fd27a42fd6ad126bede42861  bootstrap-source.tar.xz" | sha256sum -c -
       - name: Extract source tree
         shell: bash
         run: |
           rm -rf .bootstrap
           mkdir .bootstrap
-          unzip -q bootstrap-source.zip -d .bootstrap
+          tar -xJf bootstrap-source.tar.xz -C .bootstrap
           test -f .bootstrap/LunAstra/README.md
           cp -a .bootstrap/LunAstra/. .
-          rm -rf .bootstrap bootstrap-source.zip bootstrap-source.b64.* bootstrap-go .github/workflows/bootstrap-source.yml
+          rm -rf .bootstrap bootstrap-source.tar.xz bootstrap-source.b64.* bootstrap-go .github/workflows/bootstrap-source.yml
       - name: Commit source
         shell: bash
         run: |

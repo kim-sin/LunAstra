@@ -3,7 +3,7 @@ name: Bootstrap LunAstra source
 on:
   push:
     paths:
-      - bootstrap-source.zip
+      - bootstrap-go
 
 permissions:
   contents: write
@@ -14,9 +14,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify source archive
+      - name: Rebuild and verify source archive
         shell: bash
-        run: echo "ac935d98d22cba43081518b4e3e506b97d1d5ddd139dfc1b239e7c37f9970880  bootstrap-source.zip" | sha256sum -c -
+        run: |
+          cat bootstrap-source.b64.* | base64 -d > bootstrap-source.zip
+          echo "ac935d98d22cba43081518b4e3e506b97d1d5ddd139dfc1b239e7c37f9970880  bootstrap-source.zip" | sha256sum -c -
       - name: Extract source tree
         shell: bash
         run: |
@@ -25,7 +27,7 @@ jobs:
           unzip -q bootstrap-source.zip -d .bootstrap
           test -f .bootstrap/LunAstra/README.md
           cp -a .bootstrap/LunAstra/. .
-          rm -rf .bootstrap bootstrap-source.zip .github/workflows/bootstrap-source.yml
+          rm -rf .bootstrap bootstrap-source.zip bootstrap-source.b64.* bootstrap-go .github/workflows/bootstrap-source.yml
       - name: Commit source
         shell: bash
         run: |

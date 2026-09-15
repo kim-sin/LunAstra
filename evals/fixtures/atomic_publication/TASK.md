@@ -1,0 +1,2 @@
+# Publish only validated bytes
+Implement publish(path, payload, validate) using a temporary sibling and atomic replacement. validate receives exactly payload (bytes). If validation returns false or raises, preserve any existing destination byte-for-byte; do not create a missing destination. On success publish exactly payload. Temporary sibling files must be cleaned up on failure and success. Parent exists. Never kill jobs, delete a directory or overwrite unrelated files. Standard library only.

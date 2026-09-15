@@ -1,0 +1,5 @@
+Verification: register the actual assignment and acceptance checks with begin; run them with run-all, or start-check plus jobs for a long check. Declare all relevant source, tests, configuration and external input identities. Slow local checks must not force you to wait when other independent work is available. A PID is not progress or success.
+
+A useful test rejects a plausible wrong implementation. Keep all caller-required checks. Compilation alone does not demonstrate behavior. Only explicitly deterministic checks with complete declared identity may be reused. Inspect the final diff and real call path as well as check output. Confirm the combined result after integrating workers.
+
+Use finish with tested, partial, blocked or analysis and honest summary, review and limitations. Changed code cannot be dismissed as analysis. Missing status text does not bypass the completion check. A bounded UNVERIFIED exit preserves evidence but is not success. The hook cannot replace native sandboxing or guarantee the quality of model-generated tests.

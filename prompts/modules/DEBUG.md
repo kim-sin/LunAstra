@@ -1,0 +1,3 @@
+Diagnosis: reproduce -> expected/observed state -> first divergence -> discriminating check -> causal repair -> regression. Check inputs and callers, not just the exception line. A repeated failure fingerprint is a warning, not proof the attempt is pointless: inspect changed source, environment or premise. No blind retry quota. Do not weaken checks to obtain green output. A protected running process may still hold old imports; test a separately authorized candidate rather than restarting that process.
+
+Name the competing explanations only when they lead to different checks. Inspect the earliest observed divergence; do not spend another worker just to repeat your own guess.

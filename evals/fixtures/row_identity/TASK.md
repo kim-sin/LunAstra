@@ -1,0 +1,2 @@
+# Exact row identity
+The commander has fixed the implementation: join outcomes to candidate rows by the pair (group, position), never by position alone or zip order. Implement join_rows(rows, outcomes) in candidate.py. Return new row dicts in input order with an outcome key whose value is the matched payload or None when unknown. Reject duplicate keys in either input with ValueError. Never mutate inputs. Keep absent, zero and negative outcomes distinct. No new dependencies.

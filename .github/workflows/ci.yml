@@ -1,0 +1,44 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.10', '3.12', '3.14']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run software tests
+        run: python tools/validate.py --output "${{ runner.temp }}/lunastra-validation"
+      - name: Build repository source archive
+        run: python tools/release.py --source-output "${{ runner.temp }}/LunAstra-3.2.0-source.zip"
+      - name: Build installable archive
+        run: python tools/release.py --output "${{ runner.temp }}/LunAstra-3.2.0.zip"
+      - name: Verify installable archive
+        run: python tools/release.py --verify "${{ runner.temp }}/LunAstra-3.2.0.zip"
+      - name: Extract installable archive
+        run: python -c "import os,pathlib,zipfile; p=pathlib.Path(os.environ['RUNNER_TEMP']); zipfile.ZipFile(p/'LunAstra-3.2.0.zip').extractall(p/'lunastra-extracted')"
+      - name: Retest archive integration paths
+        working-directory: ${{ runner.temp }}/lunastra-extracted/LunAstra
+        run: python tools/validate.py --output "${{ runner.temp }}/lunastra-archive-validation" --pattern "test_*integration.py"
+      - name: Retest publishing and removal from archive
+        working-directory: ${{ runner.temp }}/lunastra-extracted/LunAstra
+        run: python tools/validate.py --output "${{ runner.temp }}/lunastra-publication-validation" --pattern "test_publication.py"
+      - name: Retest advisory install and current-release observations
+        working-directory: ${{ runner.temp }}/lunastra-extracted/LunAstra
+        run: python tools/validate.py --output "${{ runner.temp }}/lunastra-connection-validation" --pattern "test_host_connection.py"

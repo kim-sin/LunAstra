@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "kind": "S-inspired synthetic coding diagnostics; not actual S tasks or a sealed holdout",
+  "cases": [
+    {
+      "id": "row_identity",
+      "support": []
+    },
+    {
+      "id": "causal_prefix",
+      "support": []
+    },
+    {
+      "id": "candidate_isolation",
+      "support": [
+        "shared.py"
+      ]
+    },
+    {
+      "id": "cache_identity",
+      "support": []
+    },
+    {
+      "id": "atomic_publication",
+      "support": []
+    },
+    {
+      "id": "outcome_semantics",
+      "support": []
+    },
+    {
+      "id": "pipeline_resume",
+      "support": []
+    },
+    {
+      "id": "overlay_preservation",
+      "support": []
+    }
+  ]
+}

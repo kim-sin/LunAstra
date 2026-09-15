@@ -1,0 +1,9 @@
+import candidate
+import math
+assert candidate.features([],10)==(0,None)
+assert candidate.features([(3,20),(1,2),(2,4)],3)==(2,3.0)
+assert candidate.features([(1,2),(1,4),(2,math.nan),(3,math.inf)],3)==(2,3.0)
+events=[(3,20),(1,2),(2,4)]; before=list(events)
+assert candidate.features(events,3)==candidate.features(events+[(4,math.nan),(5,1000000),(3,-999)],3)
+assert events==before
+assert candidate.features([(2,1)],2)==(0,None)

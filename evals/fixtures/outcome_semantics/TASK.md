@@ -1,0 +1,2 @@
+# Observed delivery outcomes, not prediction scores
+Implement bucket(row). A SKIP action returns NOT_APPLICABLE; an explicitly cancelled job returns CANCELLED; anything not explicitly finished returns UNKNOWN, even with a high prediction score. Finished rows require finite numeric elapsed and a strictly positive finite budget. Missing/invalid values return UNKNOWN. Return NEGATIVE / ZERO / UNDER / EXACT / OVER for elapsed/budget below 0, at 0, between 0 and 1, at 1 and above 1. Ignore score. Do not mutate input.

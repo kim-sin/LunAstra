@@ -1,0 +1,2 @@
+# Strict-prior features
+The commander requires features(events, t): events are unsorted (timestamp, value) pairs. Return (count, mean) of finite values with timestamp strictly less than t. No eligible event returns (0, None). Equal-time and future events, even NaN or infinity, must never affect the result. Input must remain unchanged; duplicate timestamps are separate observations. No full-day/future lookahead or dependency additions.

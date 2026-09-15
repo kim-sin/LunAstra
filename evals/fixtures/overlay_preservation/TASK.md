@@ -1,0 +1,2 @@
+# Overlay without losing preserved fields
+The caller fixed this design: overlay(base, start, width, replacement) returns a new list exactly the same length as base. Replace only the indicated half-open slice. Reject negative bounds, out-of-range slices, non-integer bounds (including bool), wrong replacement length and nonfinite/non-numeric replacement values. Preserve all other base entries verbatim; do not mutate inputs. An empty slice at len(base) is legal. No new dependency or in-place global changes.

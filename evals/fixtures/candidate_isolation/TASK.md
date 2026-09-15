@@ -1,0 +1,2 @@
+# Explicit per-candidate execution
+The architecture is fixed: reuse shared.run(context, value); build one private context per candidate. Implement run_batch(specs, value), where specs are dicts with name and multiplier. Return results in specification order. Do not mutate specs or shared.DEFAULT_CONTEXT, monkeypatch shared.run, or replace the shared engine. Overlapping calls must work. Reuse the provided shared.py. Reject duplicate candidate names with ValueError. Parallelism of models is managed above you; this exercise only concerns local code state.

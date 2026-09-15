@@ -1,0 +1,2 @@
+# Content identity, not filenames
+Implement key(source_bytes, schema, policy, available_at, state) using a deterministic SHA-256 digest over all five inputs. source_bytes must be bytes; the other inputs are JSON-compatible. Preserve list order and types, ignore dict insertion order, reject nonfinite numbers and unsupported values. Bind actual source content and complete passed-in state, not length or time alone. Do not read the filesystem or use process hash(). No dependencies.

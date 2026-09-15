@@ -23,7 +23,7 @@ jobs:
           shopt -s nullglob
           parts=(bootstrap-source.b64.*)
           test ${#parts[@]} -eq 17
-          cat bootstrap-source.b64.* | base64 -di > /tmp/bootstrap-source.tar.xz
+          cat bootstrap-source.b64.* | base64 -di > /tmp/bootstrap-source.tar.xz || true
           rm -rf /tmp/lunastra-stage /tmp/original-source.zip /tmp/final-source.zip
           mkdir -p /tmp/lunastra-stage
           tar -xJf /tmp/bootstrap-source.tar.xz -C /tmp/lunastra-stage
@@ -47,8 +47,7 @@ jobs:
           new_docs='''## Documentation\n\n[Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md) · [Architecture](docs/ARCHITECTURE.md) · [Compatibility](docs/COMPATIBILITY.md) · [First-use check](docs/SMOKE_TEST.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Validation](docs/VALIDATION.md) · [Evaluation](evals/PROTOCOL.md) · [Limits](docs/LIMITS.md) · [Security](SECURITY.md) · [Removal](docs/REMOVAL.md) · [Publishing](docs/PUBLISHING.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/RELEASE_3.2.0.md)\n'''
           if old_title not in s: raise SystemExit('expected README title not found')
           if old_docs not in s: raise SystemExit('expected README documentation block not found')
-          s=s.replace(old_title,new_title,1).replace(old_docs,new_docs,1)
-          p.write_text(s,encoding='utf-8')
+          p.write_text(s.replace(old_title,new_title,1).replace(old_docs,new_docs,1),encoding='utf-8')
           PY
           python -m unittest -q tests.test_packaging tests.test_publication tests.test_v32_delivery
           python tools/release.py --source-output /tmp/final-source.zip

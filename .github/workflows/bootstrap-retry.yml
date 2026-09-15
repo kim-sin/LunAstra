@@ -7,37 +7,83 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Rebuild source if bootstrap payload is present
+
+      - name: Recover and verify fixed-seven source
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
           parts=(bootstrap-source.b64.*)
-          if (( ${#parts[@]} > 0 )); then
-            test ${#parts[@]} -eq 17
-            cat bootstrap-source.b64.* | base64 -d > bootstrap-source.tar.xz
-            echo "c710b79c4eff3b0531441d31d678ad1dd2381a34fd27a42fd6ad126bede42861  bootstrap-source.tar.xz" | sha256sum -c -
-            rm -rf .bootstrap
-            mkdir .bootstrap
-            tar -xJf bootstrap-source.tar.xz -C .bootstrap
-            test -f .bootstrap/LunAstra/README.md
-            cp -a .bootstrap/LunAstra/. .
-          fi
-          rm -rf .bootstrap bootstrap-source.tar.xz bootstrap-source.b64.* bootstrap-go retry-go
-          rm -f .github/workflows/bootstrap-source.yml .github/workflows/bootstrap-retry.yml
-      - name: Commit final source state
+          test ${#parts[@]} -eq 17
+          cat bootstrap-source.b64.* | base64 -di > /tmp/bootstrap-source.tar.xz
+          rm -rf /tmp/lunastra-stage /tmp/original-source.zip /tmp/final-source.zip
+          mkdir -p /tmp/lunastra-stage
+          tar -xJf /tmp/bootstrap-source.tar.xz -C /tmp/lunastra-stage
+          test -f /tmp/lunastra-stage/LunAstra/README.md
+          cd /tmp/lunastra-stage/LunAstra
+          python tools/release.py --source-output /tmp/original-source.zip
+          echo "ac935d98d22cba43081518b4e3e506b97d1d5ddd139dfc1b239e7c37f9970880  /tmp/original-source.zip" | sha256sum -c -
+
+      - name: Apply final public README wording
         shell: bash
         run: |
+          set -euo pipefail
+          cd /tmp/lunastra-stage/LunAstra
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('README.md')
+          s=p.read_text(encoding='utf-8')
+          old_title='## A moon reaching for the stars.'
+          new_title='## A moon dreaming of the stars.'
+          old_docs='''## Documentation\n\n- [Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md)\n- [Architecture](docs/ARCHITECTURE.md) and [Compatibility](docs/COMPATIBILITY.md)\n- [First-use check](docs/SMOKE_TEST.md) and [Troubleshooting](docs/TROUBLESHOOTING.md)\n- [Validation](docs/VALIDATION.md), [Evaluation](evals/PROTOCOL.md), and [Limits](docs/LIMITS.md)\n- [Security](SECURITY.md), [Removal](docs/REMOVAL.md), and [Publishing](docs/PUBLISHING.md)\n- [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), and [Release notes](docs/RELEASE_3.2.0.md)\n'''
+          new_docs='''## Documentation\n\n[Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md) · [Architecture](docs/ARCHITECTURE.md) · [Compatibility](docs/COMPATIBILITY.md) · [First-use check](docs/SMOKE_TEST.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Validation](docs/VALIDATION.md) · [Evaluation](evals/PROTOCOL.md) · [Limits](docs/LIMITS.md) · [Security](SECURITY.md) · [Removal](docs/REMOVAL.md) · [Publishing](docs/PUBLISHING.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/RELEASE_3.2.0.md)\n'''
+          if old_title not in s: raise SystemExit('expected README title not found')
+          if old_docs not in s: raise SystemExit('expected README documentation block not found')
+          s=s.replace(old_title,new_title,1).replace(old_docs,new_docs,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          python -m unittest -q tests.test_packaging tests.test_publication tests.test_v32_delivery
+          python tools/release.py --source-output /tmp/final-source.zip
+          echo "f3b6f9aa93fc666043a2f702156cb5c7ce1a829f4a62f7ef28800f28f38bfa37  /tmp/final-source.zip" | sha256sum -c -
+
+      - name: Run full Linux validation before publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/lunastra-stage/LunAstra
+          python tools/validate.py --output /tmp/lunastra-validation
+
+      - name: Publish a clean main branch
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan clean-main
+          git rm -rf . || true
+          cp -a /tmp/lunastra-stage/LunAstra/. .
           git add -A
-          git diff --cached --quiet && exit 0
-          git commit -m "Publish LunAstra 3.2.0 fixed-seven source"
-          git push origin HEAD:main
+          git commit -m "Publish LunAstra 3.2.0 fixed-seven"
+          git push --force origin clean-main:main
+
+      - name: Dispatch public CI matrix
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/kim-sin/LunAstra/actions/workflows/ci.yml/dispatches \
+            -d '{"ref":"main"}'

@@ -113,8 +113,13 @@ class Hooks:
         key,role,root=identity(event)
         if alias and alias.get('model')==event['model'] and alias.get('key') and event['session_id']==alias['parent']:
             known=store.get(alias['key'],'meta',{})
-            legitimate={known.get('workspace'),known.get('assigned_workspace')}
-            if str(root) in legitimate:key=alias['key']
+            legitimate=set()
+            for value in (known.get('workspace'),known.get('assigned_workspace')):
+                if value is None:continue
+                if not isinstance(value,str) or not value:raise HarnessError('invalid stored workspace')
+                candidate=Path(value).absolute();no_symlinks(candidate)
+                legitimate.add(candidate.resolve())
+            if root in legitimate:key=alias['key']
         if kind=='SubagentStart':store.put('__agent_alias__',event['agent_id'],{'parent':event['session_id'],'key':key,'model':event['model']})
         store=Store(self.state); meta=store.get(key,'meta')
         if meta is not None and not isinstance(meta,dict):raise HarnessError('invalid persisted session metadata')
@@ -137,7 +142,8 @@ class Hooks:
             meta['parent_session_id']=event['session_id']  # legacy host contract
         elif meta.get('parent_session_id') == event.get('agent_id'):
             meta['parent_session_id']=None  # migrate the old self-parent record
-        if meta.get('assigned_workspace'):root=Path(meta['assigned_workspace'])
+        if meta.get('assigned_workspace'):
+            root=Path(meta['assigned_workspace']).absolute();no_symlinks(root);root=root.resolve()
         if kind=='Interrupt':
             store.put(key,'interrupted',True)
             return {}

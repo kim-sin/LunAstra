@@ -31,3 +31,14 @@ class PackagingTests(unittest.TestCase):
         for name,data in release.collect().items():
             if name.endswith('.md'):
                 self.assertIsNone(re.search(r'[\uAC00-\uD7A3]',data.decode('utf-8-sig')),name)
+
+    def test_only_reviewed_artwork_is_allowed(self):
+        files=release.collect();name='docs/assets/lunastra-hero.webp'
+        self.assertIn(name,files)
+        with self.assertRaisesRegex(ValueError,'unreviewed artwork'):
+            release.validate_files({**files,name:files[name]+b'changed'})
+        with self.assertRaisesRegex(ValueError,'extension refused'):
+            release.validate_files({**files,'docs/assets/other.webp':files[name]})
+    def test_html_image_link_must_resolve(self):
+        with self.assertRaisesRegex(ValueError,'broken local documentation link'):
+            release.check_links({'README.md':b'<img src="docs/assets/missing.webp" width="420">'})

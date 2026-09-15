@@ -72,6 +72,7 @@ def fingerprint(root: Path, paths: list[str]):
 
     Exceeding bounds is a visible blocker, never silent partial coverage.
     """
+    root = Path(root).absolute(); no_symlinks(root); root = root.resolve()
     result = {}; count = 0; total = 0
     for name in paths:
         p = inside(root, name)

@@ -4,7 +4,7 @@ import os
 import re
 import time
 from pathlib import Path
-from .util import HarnessError, inside
+from .util import HarnessError, inside, no_symlinks
 from .store import Store
 from .transport import tool_name
 
@@ -16,7 +16,8 @@ def normalized(root: Path, value: str) -> str:
     root=root.resolve()
     p=Path(value)
     if p.is_absolute():
-        try: value=p.relative_to(root).as_posix()
+        no_symlinks(p)
+        try: value=p.resolve().relative_to(root).as_posix()
         except ValueError as e: raise HarnessError('edit path is outside workspace') from e
     if os.name == 'nt': value=value.replace('\\','/')
     target=inside(root,value,allow_root=True)

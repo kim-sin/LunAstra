@@ -42,7 +42,7 @@ def validate_pre_output(output):
 class NativeContractTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
-        self.base=Path(self.tmp.name);self.ws=self.base/'project';self.ws.mkdir()
+        self.base=Path(self.tmp.name).resolve();self.ws=self.base/'project';self.ws.mkdir()
         (self.ws/'app.py').write_text('value = 1\n')
         self.state=self.base/'state';self.hooks=Hooks(ROOT,self.state);self.store=Store(self.state)
         self.root={'session_id':'native-parent','cwd':str(self.ws),'hook_event_name':'SessionStart',
@@ -243,7 +243,7 @@ class LiteralCommandTests(unittest.TestCase):
 
 class ExecutionRoutingTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name).resolve()
         self.tree=self.base/'assigned';self.tree.mkdir()
         self.meta={'role':'worker','team_ticket':'ticket','assigned_workspace':str(self.tree)}
 

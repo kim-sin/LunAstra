@@ -166,7 +166,7 @@ class CodeMap:
         files={}; skipped=[]; errors=[]; total=0; examined=0; hits=0; parsed=0; truncated=False
         stop=False
         for current,dirs,names in os.walk(self.root,followlinks=False):
-            if max_seconds is not None and time.monotonic()-start>max_seconds: truncated=True;break
+            if max_seconds is not None and time.monotonic()-start>=max_seconds: truncated=True;break
             dirs.sort(); names.sort()
             if Path(current)!=self.root:
                 extra,partial=_ignore_rules(Path(current))
@@ -183,7 +183,7 @@ class CodeMap:
                 good.append(name)
             dirs[:]=good
             for name in names:
-                if max_seconds is not None and time.monotonic()-start>max_seconds: truncated=True;stop=True;break
+                if max_seconds is not None and time.monotonic()-start>=max_seconds: truncated=True;stop=True;break
                 examined+=1
                 if examined>20000: truncated=True;stop=True;break
                 p=Path(current)/name; rel=p.relative_to(self.root).as_posix()

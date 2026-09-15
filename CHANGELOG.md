@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.2.0 fixed-seven-publication.1
+
+- Correct inactive inherited-filter handling without running active checkout filters.
+- Normalize snapshot and worker alias paths; retain symlink and ownership guards.
+- Make zero-time indexing deterministic and test-child cleanup wait for real exit.
+- Exercise Windows launchers and permission changes instead of skipping them.
+- Include checksum-pinned 420px artwork and clarify observed activation.
+- Gate maintainer-requested preview releases on the complete hosted CI matrix.
+
 ## 3.2.0 fixed-seven
 
 - Add a seven-session contract: one root and six persistent native Luna children, reused across plan, execution and final review.

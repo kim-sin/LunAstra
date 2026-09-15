@@ -14,6 +14,8 @@ ROOT=Path(__file__).resolve().parents[1]
 TOP={'README.md','LICENSE','SECURITY.md','CONTRIBUTING.md','CHANGELOG.md','install.py','luna.py','INSTALL.cmd','CHECK.cmd','UNREGISTER.cmd','PURGE.cmd','.gitignore','.gitattributes','requirements-dev.txt'}
 DIRS={'luna_astra','prompts','tests','evals','tools','docs','.github'}
 EXT={'.py','.md','.json','.yml','.yaml','.toml','.txt','.cmd'}
+# Only the reviewed artwork bytes are allowed; this is not a general binary allowance.
+ASSET_HASHES={'docs/assets/lunastra-hero.webp':'8e9167d308257ee5a4841c2860d025ab17b4a57024e16e99dba1f77f545ef2fd'}
 FORBIDDEN={'state','state-v2','state-v3','worktrees','backups','checkpoints','.codex','.omx','.lunastra','.env'}
 
 def validate_files(files):
@@ -32,6 +34,10 @@ def validate_files(files):
             raise ValueError('unlisted source file: '+name)
         if any(part in FORBIDDEN or re.fullmatch(r'state-v\d+', part) or part.startswith('.env.') for part in parts):
             raise ValueError('private/runtime path refused: '+name)
+        if name in ASSET_HASHES:
+            if len(raw)>128*1024 or hashlib.sha256(raw).hexdigest()!=ASSET_HASHES[name]:
+                raise ValueError('unreviewed artwork bytes: '+name)
+            continue
         if Path(name).suffix not in EXT and name not in TOP:
             raise ValueError('binary/runtime extension refused: '+name)
         if len(raw)>2*1024*1024:
@@ -72,8 +78,11 @@ def collect(root=ROOT):
 def check_links(files):
     for name,data in files.items():
         if not name.endswith('.md'):continue
-        for match in re.finditer(r'\[[^\]]*\]\(([^)]+)\)',data.decode('utf-8-sig')):
-            value=match.group(1).split('#',1)[0]
+        text=data.decode('utf-8-sig')
+        targets=re.findall(r'\[[^\]]*\]\(([^)]+)\)',text)
+        targets+=re.findall(r'''<img\b[^>]*\bsrc=["']([^"']+)["']''',text,re.I)
+        for target_value in targets:
+            value=target_value.split('#',1)[0]
             if not value or re.match(r'\w+://|mailto:',value):continue
             target=(Path(name).parent/value).as_posix()
             import posixpath

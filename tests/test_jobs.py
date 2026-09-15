@@ -4,6 +4,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from luna_astra.hooks import Hooks,identity
 from luna_astra.store import Store
@@ -15,6 +16,12 @@ ROOT=Path(__file__).resolve().parents[1]
 class JobsTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+        self.processes=[]
+        real_popen=subprocess.Popen
+        def owned_popen(*args,**kwargs):
+            process=real_popen(*args,**kwargs);self.processes.append(process);return process
+        capture=patch('luna_astra.jobs.subprocess.Popen',side_effect=owned_popen)
+        capture.start();self.addCleanup(capture.stop);self.addCleanup(self.wait_processes)
         self.ws=self.base/'repo';self.ws.mkdir();(self.ws/'app.py').write_text('answer=2\n')
         (self.ws/'check.py').write_text('import app\nassert app.answer==2\n')
         self.state=self.base/'state';self.h=Hooks(ROOT,self.state)
@@ -24,6 +31,8 @@ class JobsTests(unittest.TestCase):
         self.task={'task_id':'async','design':'keep correct behavior','requirements':['answer=2'],'allowed_paths':['app.py'],
                    'checks':[{'id':'check','purpose':'behavior','argv':[sys.executable,'-B','check.py'],'dependencies':['app.py','check.py'],'covers':[0]}]}
         self.ev.begin(self.task);self.jobs=Jobs(self.store,self.key,ROOT)
+    def wait_processes(self):
+        for process in self.processes:process.wait(timeout=30)
     def wait(self):
         deadline=time.monotonic()+12
         while self.jobs.active() and time.monotonic()<deadline:time.sleep(.02)

@@ -38,6 +38,38 @@ class Workspaces:
             if n and any(ord(c)<32 for c in n):raise HarnessError('control characters in a Git path are unsupported')
         return [n for n in names if n]
 
+    def _check_filters(self,root,files):
+        """Inspect configuration/attributes without running clean/smudge processes.
+
+        Inherited Git LFS definitions alone do not mean this repository uses LFS.
+        Both index and worktree attributes matter, including info/global attributes.
+        Explicit repository-local executable filters retain the conservative refusal.
+        """
+        local=self._git(root,'config','--local','--includes','--get-regexp',
+                        r'^filter\..*\.(clean|smudge|process)$',check=False)
+        if local.returncode not in (0,1):raise HarnessError('cannot inspect local checkout filters')
+        if local.returncode==0 and local.stdout.strip():
+            raise HarnessError('checkout filters configured locally: use read-only helpers and a single writer')
+        ambiguous=self._git(root,'config','--get-regexp',
+                            r'^filter\.(unspecified|set|unset)\.(clean|smudge|process)$',check=False)
+        if ambiguous.returncode not in (0,1):raise HarnessError('cannot inspect inherited filter names')
+        if ambiguous.returncode==0 and ambiguous.stdout.strip():
+            raise HarnessError('ambiguous checkout filter name: use read-only helpers and a single writer')
+        if len(files)>10000:raise HarnessError('filter inspection path budget exceeded')
+        if not files:return
+        data=('\0'.join(files)+'\0').encode('utf-8')
+        for options in ((),('--cached',)):
+            raw=self._git(root,'check-attr',*options,'-z','--stdin','filter',data=data).stdout
+            fields=raw.split(b'\0')
+            if fields[-1:]!=[b''] or len(fields)!=len(files)*3+1:
+                raise HarnessError('cannot validate checkout filter attributes')
+            for offset,name in enumerate(files):
+                path,attribute,value=fields[offset*3:offset*3+3]
+                if path!=name.encode('utf-8') or attribute!=b'filter':
+                    raise HarnessError('unexpected checkout filter attribute identity')
+                if value not in {b'unspecified',b'unset',b'set'}:
+                    raise HarnessError('active checkout filter: use read-only helpers and a single writer')
+
     def prepare(self,ticket:str,root:Path,paths:list[str]):
         import re
         if not re.fullmatch('[a-f0-9]{32}',ticket):raise HarnessError('invalid worktree ticket')
@@ -50,14 +82,11 @@ class Workspaces:
             return info
         top=Path(self._git(root,'rev-parse','--show-toplevel').stdout.decode().strip()).resolve()
         if top!=root:raise HarnessError('select the Git repository root for isolated implementation')
-        if self._git(root,'status','--porcelain=v1','-z','--untracked-files=all').stdout:
-            raise HarnessError('source checkout has uncommitted files: preserve them; use one writer rather than an incomplete worktree')
-        # Checkout filters may execute commands or fetch data. Do not start them implicitly.
-        filters=self._git(root,'config','--get-regexp',r'^filter\..*\.(smudge|process)$',check=False)
-        if filters.returncode==0 and filters.stdout.strip():raise HarnessError('checkout filters configured: use the existing workspace without starting filters')
-        if filters.returncode not in (0,1):raise HarnessError('cannot inspect checkout filters')
         files=self._names(root,'ls-files','-z');snapshot={};modes={};total=0
         if len(files)>10000:raise HarnessError('checkout snapshot budget exceeded; prefer read-only helpers')
+        self._check_filters(root,files)
+        if self._git(root,'status','--porcelain=v1','-z','--untracked-files=all').stdout:
+            raise HarnessError('source checkout has uncommitted files: preserve them; use one writer rather than an incomplete worktree')
         for name in files:
             p=inside(root,name)
             if not p.is_file():raise HarnessError('submodules/nonregular tracked paths need explicit handling')
@@ -76,6 +105,7 @@ class Workspaces:
 
     def changes(self,info):
         tree=Path(info['tree']);no_symlinks(tree)
+        self._check_filters(tree,self._names(tree,'ls-files','-z')+self._names(tree,'ls-files','--others','--exclude-standard','-z'))
         names=sorted(set(self._names(tree,'diff','--no-ext-diff','--name-only','-z',info['base'])+self._names(tree,'ls-files','--others','--exclude-standard','-z')))
         allowed=info['paths']
         for name in names:
@@ -112,6 +142,7 @@ class Workspaces:
                     raise HarnessError('original file mode changed or old baseline lacks mode evidence: '+n)
                 if now!=info['baseline'].get(n):raise HarnessError('leader or another worker already changed '+n+'; never overwrite it')
             if names:
+                self._check_filters(root,self._names(root,'ls-files','-z')+names)
                 self._git(tree,'add','-A','--',*[':(literal)'+n for n in names])
                 staged=set(self._names(tree,'diff','--cached','--name-only','-z',info['base']))
                 if staged!=set(names):raise HarnessError('staged changes differ from reviewed worktree changes; integration refused')

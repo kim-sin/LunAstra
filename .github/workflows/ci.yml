@@ -42,3 +42,60 @@ jobs:
       - name: Retest advisory install and current-release observations
         working-directory: ${{ runner.temp }}/lunastra-extracted/LunAstra
         run: python tools/validate.py --output "${{ runner.temp }}/lunastra-connection-validation" --pattern "test_host_connection.py"
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-${{ matrix.os }}-${{ matrix.python }}
+          path: |
+            ${{ runner.temp }}/lunastra-validation/
+            ${{ runner.temp }}/lunastra-archive-validation/
+            ${{ runner.temp }}/lunastra-publication-validation/
+            ${{ runner.temp }}/lunastra-connection-validation/
+          retention-days: 14
+          if-no-files-found: warn
+  publish-preview:
+    needs: test
+    if: >-
+      github.repository == 'kim-sin/LunAstra' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: lunastra-preview-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Build and verify the tested archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release"
+          python tools/release.py --source-output "$RUNNER_TEMP/release/LunAstra-3.2.0-source.zip"
+          python tools/release.py --output "$RUNNER_TEMP/release/LunAstra-3.2.0.zip"
+          python tools/release.py --verify "$RUNNER_TEMP/release/LunAstra-3.2.0.zip"
+          cd "$RUNNER_TEMP/release"
+          sha256sum LunAstra-3.2.0.zip LunAstra-3.2.0-source.zip > SHA256SUMS.txt
+      - name: Publish owner-requested preview from the tested main commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$head" = "$GITHUB_SHA"
+          gh release create v3.2.0 \
+            "$RUNNER_TEMP/release/LunAstra-3.2.0.zip" \
+            "$RUNNER_TEMP/release/LunAstra-3.2.0-source.zip" \
+            "$RUNNER_TEMP/release/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "LunAstra 3.2.0 - Fixed Seven" --prerelease \
+            --notes-file docs/RELEASE_3.2.0.md

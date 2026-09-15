@@ -1,6 +1,10 @@
 # LunAstra
 
-## A moon reaching for the stars.
+<p align="center">
+  <img src="docs/assets/lunastra-hero.webp" width="420" alt="LunAstra: a robot and a cat watching the moon together" />
+</p>
+
+## A moon dreaming of the stars.
 
 **Keep Luna. Give it a team that plans, builds, challenges, and checks its work.**
 
@@ -59,7 +63,7 @@ Requirements: Python **3.10+**, an installed Codex host that exposes the necessa
 1. Fully extract this distribution into a **new folder**.
 2. Run `INSTALL.cmd`.
 3. In the Codex host you actually use, open `/hooks` and review the LunAstra handlers.
-4. Start a **new Luna conversation**. Choose your intended light Luna setting and review the host's child-model/reasoning defaults so they do not override that choice. LunAstra does not rewrite those settings.
+4. Select Luna and your intended reasoning setting. A new conversation is the simplest first-use check; an existing conversation can initialize on its next Luna prompt **if the host has loaded the approved hooks**. Check native child-model/reasoning defaults too; LunAstra does not rewrite them.
 5. Try the [first-use check](docs/SMOKE_TEST.md) in a disposable project.
 6. Run `CHECK.cmd` to inspect installed files and observed hook activity.
 
@@ -72,10 +76,10 @@ python3 install.py apply
 python3 install.py doctor
 ```
 
-Review the hooks and start a new Luna conversation, just as on Windows.
+Review the hooks and follow the same first-use check as on Windows.
 
 > [!IMPORTANT]
-> Old sessions are not silently converted. Sessions recorded before this build keep their earlier dynamic-team contract. Finish their work with the matching build; use a new conversation for fixed seven. Installation success and observed tool traffic do not certify a complete seven-session run.
+> Selecting Luna is not proof that hooks ran. Confirm current hook activity with `CHECK.cmd`, then confirm six distinct native child IDs and the same-ID reuse with `crew-state`. Older **dynamic-team LunAstra records** are not silently converted to fixed seven. Finish that work with its matching build; do not restart active work just to test the installation.
 
 ## Using it
 
@@ -91,7 +95,7 @@ For status, use the hook-supplied helper command followed by `crew-state`. `cont
 
 ## Boundaries that stay intact
 
-LunAstra does not rewrite your selected Luna, reasoning setting, authentication files, unrelated hooks, or normal Codex permission review. Native child defaults can still override a parent's model or effort, so check the effective child settings rather than assuming that full-history forks guarantee inheritance. No extra model API client, telemetry uploader, or automatic publisher is added. Arbitrary commands and native host tools can still access data or the network when the host permits them.
+LunAstra does not rewrite your selected Luna, reasoning setting, authentication files, unrelated hooks, or normal Codex permission review. Native child defaults can still override a parent's model or effort, so check the effective child settings rather than assuming that full-history forks guarantee inheritance. The installed runtime adds no extra model API client, telemetry uploader, or automatic publisher. Arbitrary commands and native host tools can still access data or the network when the host permits them.
 
 The extra sessions, inherited context, and review rounds **consume ordinary model usage**. Fixed seven is a quality-oriented policy, not a promised token-saving mode. It can cost more than a single Luna on a small task. Comparative efficiency must be measured per accepted deliverable, not inferred from the number of workers.
 
@@ -119,12 +123,8 @@ Keep each distribution in its own folder. Installed payloads are content-address
 
 ## Documentation
 
-- [Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md)
-- [Architecture](docs/ARCHITECTURE.md) and [Compatibility](docs/COMPATIBILITY.md)
-- [First-use check](docs/SMOKE_TEST.md) and [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Validation](docs/VALIDATION.md), [Evaluation](evals/PROTOCOL.md), and [Limits](docs/LIMITS.md)
-- [Security](SECURITY.md), [Removal](docs/REMOVAL.md), and [Publishing](docs/PUBLISHING.md)
-- [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), and [Release notes](docs/RELEASE_3.2.0.md)
+
+[Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md) · [Architecture](docs/ARCHITECTURE.md) and [Compatibility](docs/COMPATIBILITY.md) · [First-use check](docs/SMOKE_TEST.md) and [Troubleshooting](docs/TROUBLESHOOTING.md) · [Validation](docs/VALIDATION.md), [Evaluation](evals/PROTOCOL.md), and [Limits](docs/LIMITS.md) · [Security](SECURITY.md), [Removal](docs/REMOVAL.md), and [Publishing](docs/PUBLISHING.md) · [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), and [Release notes](docs/RELEASE_3.2.0.md)
 
 ## License
 

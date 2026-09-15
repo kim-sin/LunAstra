@@ -94,6 +94,7 @@ SKIP_DIRS = frozenset({".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".
 def snapshot(root: Path, dependencies: list[str]) -> dict[str, str]:
     if not dependencies or not isinstance(dependencies, list):
         raise HarnessError("at least one explicit dependency is required")
+    root = Path(root).absolute(); no_symlinks(root); root = root.resolve()
     result: dict[str, str] = {}
     for dep in dependencies:
         target = inside(root, dep)

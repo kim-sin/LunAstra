@@ -152,14 +152,12 @@ class V32Tests(unittest.TestCase):
     def test_windows_prefilter_defers_escaped_json_to_real_parser(self):
         cmd=definition(Path(sys.executable),ROOT,self.state,'SessionStart')['hooks'][0]['commandWindows']
         self.assertIn("$raw.Contains('\\u')",decoded(cmd))
-    @unittest.skipIf(os.name=='nt','POSIX launcher contract')
     def test_real_launcher_accepts_escaped_luna_model(self):
         e=json.dumps({**self.event,'session_id':'escaped'}).replace('luna','\\u006cuna')
         cmd=definition(Path(sys.executable),ROOT,self.state,'SessionStart')['hooks'][0]['command']
         result=subprocess.run(cmd,shell=True,input=e,text=True,capture_output=True,timeout=20)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('LOCAL_HELPER_ARGV',json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
-    @unittest.skipIf(os.name=='nt','POSIX launcher contract')
     def test_real_launcher_keeps_non_luna_fast_path(self):
         cmd=definition(Path('/deliberately-missing-python'),ROOT,self.state,'SessionStart')['hooks'][0]['command']
         result=subprocess.run(cmd,shell=True,input=json.dumps({**self.event,'model':'gpt-6-astra'}),text=True,capture_output=True,timeout=20)
@@ -187,9 +185,10 @@ class V32GitTests(unittest.TestCase):
         (tree/'a.py').write_text('value=2\n')
         with self.assertRaises(HarnessError):self.spaces.integrate(self.ticket)
         self.assertEqual((self.ws/'a.py').read_text(),'value=1\n');self.assertEqual((self.ws/'b.py').read_text(),'value=1\n')
-    @unittest.skipIf(os.name=='nt','POSIX executable mode')
     def test_user_permission_change_is_preserved(self):
         info=self.spaces.prepare(self.ticket,self.ws,['a.py']);(Path(info['tree'])/'a.py').write_text('value=2\n')
-        (self.ws/'a.py').chmod(0o755)
+        mode=0o444 if os.name=='nt' else 0o755
+        (self.ws/'a.py').chmod(mode)
+        self.addCleanup((self.ws/'a.py').chmod,0o644)
         with self.assertRaises(HarnessError):self.spaces.integrate(self.ticket)
-        self.assertEqual(stat.S_IMODE((self.ws/'a.py').stat().st_mode),0o755)
+        self.assertEqual(stat.S_IMODE((self.ws/'a.py').stat().st_mode),mode)

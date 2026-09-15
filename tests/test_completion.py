@@ -12,7 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class CompletionTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name).resolve()
         self.ws=self.base/'repo';self.ws.mkdir();(self.ws/'app.py').write_text('answer=1\n')
         self.state=self.base/'state';self.h=Hooks(ROOT,self.state)
         self.event={'hook_event_name':'SessionStart','model':'gpt-5.6-luna','session_id':'parent','cwd':str(self.ws),'turn_id':'one'}

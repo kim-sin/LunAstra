@@ -4,9 +4,17 @@ LunAstra 3.2.0 consolidates the worker-orchestration, workspace-isolation, evide
 
 ## Fixed-seven maintenance build
 
-The version remains 3.2.0 and the runtime build marker is `fixed-seven`. New root sessions require one root plus six persistent native Luna children. All six contribute to PLAN, EXECUTE and REVIEW; two slots never implement. Same-ID native send acknowledgements, per-assignment evidence, source-linked reports, snapshot-bound final review, targeted repair and bounded JSON staging are added. Legacy root sessions retain their earlier dynamic contract.
+The version remains 3.2.0 and the runtime build marker is `fixed-seven-publication.1`. New root sessions require one root plus six persistent native Luna children. All six contribute to PLAN, EXECUTE and REVIEW; two slots never implement. Same-ID native send acknowledgements, per-assignment evidence, source-linked reports, snapshot-bound final review, targeted repair and bounded JSON staging are added. Legacy root sessions retain their earlier dynamic contract.
 
 The goal includes light-Luna versus Astra Max evaluation. No actual model parity or usage-saving measurement is implied by this maintenance release.
+
+## Hosted-CI and publishing maintenance
+
+Unused inherited Git LFS settings no longer block ordinary worktree isolation. Active index/worktree filters and repository-local executable filters still refuse implicit execution, including during integration. Equivalent path spellings are normalized before fingerprint and child-identity comparisons. A zero-second indexing budget is deterministic. Test controllers finish before temporary-file cleanup; native Windows launcher and permission checks replace platform skips.
+
+The approved artwork is displayed at 420 pixels and is pinned by checksum in both source and installable archives. The public tagline is "A moon dreaming of the stars." Existing-chat activation is conditional on observed hook loading, not a blanket guarantee.
+
+This remains a **preview for live-host compatibility** until native seven-session first-use checks have been recorded. Hosted software CI, even when all matrix jobs pass, is not an Astra Max performance measurement.
 
 ## Native Codex integration
 

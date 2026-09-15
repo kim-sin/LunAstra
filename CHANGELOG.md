@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.2.0 fixed-seven-flow.1
+
+- Repair premature parent Stop and worker-specific report recovery.
+- Drive native waits and same-member recovery without replacing the six IDs.
+- Bind native wait observations to the current round and dispatch attempt.
+- Preserve accounts, model settings, original evidence and interrupted work.
+- See [continuation repair](docs/FLOW_FIX.md) for behavior and verification limits.
+
+## 3.2.0 fixed-seven-stability.2
+
+- Preserve automatic Luna activation and one lead plus six persistent workers.
+- Canonicalize merge-lock identity before acquiring a filesystem lock.
+- Reject symlink roots before resolving their spelling.
+- Normalize test-process temporary roots while retaining symlink rejection.
+- Pin Git newline semantics inside inherited-filter test fixtures.
+- Exclude obsolete staging patch/workflow files from the distribution.
+- Close SQLite connections on setup failures as well as body failures.
+- Keep live Codex connectivity and model quality separate from software tests.
+
 ## 3.2.0 fixed-seven-publication.1
 
 - Correct inactive inherited-filter handling without running active checkout filters.

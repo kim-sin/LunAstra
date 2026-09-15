@@ -1,6 +1,6 @@
 """Small transactional metadata store, outside project sources; no raw prompt logging."""
 from __future__ import annotations
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import json
 import sqlite3
 import time
@@ -23,18 +23,16 @@ CREATE TABLE IF NOT EXISTS leases (workspace TEXT, path TEXT, owner TEXT, token 
 
     @contextmanager
     def db(self, write: bool = False):
-        db = sqlite3.connect(self.path, timeout=3, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA busy_timeout=3000')
-        try:
-            if write: db.execute('BEGIN IMMEDIATE')
-            yield db
-            if write: db.commit()
-        except BaseException:
-            if write: db.rollback()
-            raise
-        finally:
-            db.close()
+        with closing(sqlite3.connect(self.path, timeout=3, isolation_level=None)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute('PRAGMA busy_timeout=3000')
+            try:
+                if write: db.execute('BEGIN IMMEDIATE')
+                yield db
+                if write: db.commit()
+            except BaseException:
+                if write: db.rollback()
+                raise
 
     def get(self, scope, name, default=None):
         with self.db() as db:

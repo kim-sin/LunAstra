@@ -12,7 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 @unittest.skipUnless(shutil.which('git'),'Git required')
 class TeamIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name).resolve()
         self.ws=self.base/'repo';self.ws.mkdir();self.home=self.base/'codex'
         def git(*args):subprocess.run(['git','-C',str(self.ws),*args],check=True,capture_output=True)
         git('init','-q');git('config','user.name','Test Author');git('config','user.email','test@example.invalid')

@@ -4,7 +4,7 @@ LunAstra 3.2.0 consolidates the worker-orchestration, workspace-isolation, evide
 
 ## Fixed-seven maintenance build
 
-The version remains 3.2.0 and the runtime build marker is `fixed-seven-publication.1`. New root sessions require one root plus six persistent native Luna children. All six contribute to PLAN, EXECUTE and REVIEW; two slots never implement. Same-ID native send acknowledgements, per-assignment evidence, source-linked reports, snapshot-bound final review, targeted repair and bounded JSON staging are added. Legacy root sessions retain their earlier dynamic contract.
+The version remains 3.2.0 and the runtime build marker is `fixed-seven-stability.2`. New root sessions require one root plus six persistent native Luna children. All six contribute to PLAN, EXECUTE and REVIEW; two slots never implement. Same-ID native send acknowledgements, per-assignment evidence, source-linked reports, snapshot-bound final review, targeted repair and bounded JSON staging are added. Legacy root sessions retain their earlier dynamic contract.
 
 The goal includes light-Luna versus Astra Max evaluation. No actual model parity or usage-saving measurement is implied by this maintenance release.
 

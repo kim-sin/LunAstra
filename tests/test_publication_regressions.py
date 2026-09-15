@@ -23,6 +23,7 @@ class PublicationRegressions(unittest.TestCase):
         (self.root/'a.py').write_text('value = 1\n',encoding='utf-8')
         self.git('init','-q');self.git('config','user.name','Regression fixture')
         self.git('config','user.email','test@example.invalid')
+        self.git('config','core.autocrlf','false')
         self.git('add','a.py');self.git('commit','-qm','fixture')
         self.spaces=Workspaces(self.base/'worktrees')
     def git(self,*args):

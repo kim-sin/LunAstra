@@ -10,7 +10,7 @@ from luna_astra.util import HarnessError
 @unittest.skipUnless(shutil.which('git'),'Git is required for isolated-workspace tests')
 class WorkspacesTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name).resolve()
         self.root=self.base/'repo';self.root.mkdir();self.git('init','-q');self.git('config','user.name','Test Author');self.git('config','user.email','test@example.invalid')
         (self.root/'a.py').write_text('answer = 1\n');(self.root/'b.py').write_text('value = 2\n')
         self.git('add','a.py','b.py');self.git('commit','-qm','fixture')

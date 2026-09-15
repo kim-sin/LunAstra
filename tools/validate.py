@@ -4,12 +4,34 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 import sys
 import time
 import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+
+@contextmanager
+def canonical_test_temp():
+    """Canonical temporary paths for this test process and its children only."""
+    previous_cache = tempfile.tempdir
+    previous_env = {key: os.environ.get(key) for key in ('TMPDIR', 'TMP', 'TEMP')}
+    try:
+        directory = str(Path(tempfile.gettempdir()).resolve(strict=True))
+        tempfile.tempdir = directory
+        os.environ.update({key: directory for key in previous_env})
+        yield
+    finally:
+        tempfile.tempdir = previous_cache
+        for key, value in previous_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
 
 def fingerprint():
     files={}
@@ -33,7 +55,7 @@ def main():
     if a.output.exists():p.error('output exists; choose a new directory to preserve previous evidence')
     a.output.mkdir(parents=True)
     before=fingerprint();start=time.time()
-    with (a.output/'unittest.log').open('w',encoding='utf-8') as log:
+    with canonical_test_temp(), (a.output/'unittest.log').open('w',encoding='utf-8') as log:
         suite=unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern=a.pattern)
         result=unittest.TextTestRunner(stream=Tee(log),verbosity=2).run(suite)
     after=fingerprint()

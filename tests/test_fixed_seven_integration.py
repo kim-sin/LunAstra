@@ -17,7 +17,7 @@ PACKAGE=Path(__file__).resolve().parents[1]
 class InstalledFixedSevenTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
-        self.base=Path(self.tmp.name);self.ws=self.base/'project';self.ws.mkdir();self.home=self.base/'home';self.home.mkdir()
+        self.base=Path(self.tmp.name).resolve();self.ws=self.base/'project';self.ws.mkdir();self.home=self.base/'home';self.home.mkdir()
         (self.ws/'app.py').write_text('def add(a,b): return a-b\n',encoding='utf-8')
         (self.ws/'test_app.py').write_text('from app import add\nassert add(2,3)==5\nassert add(-2,2)==0\n',encoding='utf-8')
         (self.home/'auth.json').write_text('{"retained":"fixture-not-a-token"}',encoding='utf-8')

@@ -73,7 +73,7 @@ class Workspaces:
     def prepare(self,ticket:str,root:Path,paths:list[str]):
         import re
         if not re.fullmatch('[a-f0-9]{32}',ticket):raise HarnessError('invalid worktree ticket')
-        root=Path(root).resolve();no_symlinks(root)
+        root=Path(root).absolute();no_symlinks(root);root=root.resolve()
         if self.directory.resolve().is_relative_to(root):raise HarnessError('worktree storage must be outside the source repository')
         directory=self.directory/ticket;record=directory/'record.json'
         if record.exists():
@@ -119,6 +119,8 @@ class Workspaces:
     @contextmanager
     def _lock(self,root):
         from .util import json_hash
+        root=Path(root).absolute();no_symlinks(root);root=root.resolve()
+        # Resolve aliases before hashing; preserve existing canonical lock names.
         lock=self.directory/('merge-'+json_hash(str(root))+'.lock');no_symlinks(lock)
         fd=None
         try:

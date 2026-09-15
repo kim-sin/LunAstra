@@ -67,6 +67,7 @@ from luna_astra.coordination import Coordinator
 from luna_astra.evidence import Evidence
 from luna_astra.team import Team
 from luna_astra.crew import Crew
+from luna_astra.flow import Flow
 from luna_astra.gitspace import Workspaces
 from luna_astra.jobs import Jobs
 from luna_astra.scan import observe
@@ -98,13 +99,13 @@ HELP['team_plan_stdin']={'goal':'Current requested outcome','parallel_limit':6,'
 HELP['team_rules']=['The original Luna chooses the number of useful independent units; 6 is only the concurrency ceiling, not an optimum.','Call team-next once per ready wave, then use native Codex tools; reservations alone launch nothing.','Use separate checkouts for implementation; dirty/non-Git roots require single-writer fallback.','Accept findings only after inspecting their evidence. Accept implementation only after checked integration, then verify the combined result.','No hidden model API and no inference-setting change.']
 
 
-HELP['commands'] += ['crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-report-read SLOT','input-append NAME --offset N --chunk TEXT','crew-join TICKET','crew-report','crew-execute','crew-review','crew-repair','crew-complete']
+HELP['commands'] += ['crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover SLOT','crew-report-read SLOT','input-append NAME --offset N --chunk TEXT','crew-join TICKET','crew-report','crew-execute','crew-review','crew-repair','crew-complete']
 HELP['fixed_seven']={'total':7,'root':1,'children':6,'reuse':'same observed native IDs across all phases',
     'start':{'goal':'Requested outcome','requirements':['Observable acceptance requirement'], 'evidence_paths':['input.txt'],'output_paths':['output.txt']},
     'execute':{'decision':'Source-backed choice after all six planning reports','tasks':'Exactly s1..s6 using team task schema; s5/s6 always read-only; implement only locked output paths'},
     'report':{'verdict':'clear','summary':'Evidence-based result','findings':['Actual finding'],'references':[{'path':'input.txt'}],'covers':[0]},
     'review_complete':{'decision':'Actual root synthesis'},
-    'sequence':'crew-start -> crew-next -> native calls -> workers crew-join/report/finish -> crew-execute -> reuse -> integrate + root begin/run-all -> crew-review -> reuse -> root finish -> crew-complete',
+    'sequence':'crew-start -> crew-next -> native calls -> crew-drive/native wait loop -> workers crew-join/report/finish -> crew-execute -> reuse -> integrate + root begin/run-all -> crew-review -> reuse -> root finish -> crew-complete',
     'no_silent_fallback':'Fewer than six native children cannot be certified as fixed seven. Preserve the same IDs when the host blocks; do not replace unknown sessions.',
     'model_quality':'NOT_MEASURED; software tests and worker count do not establish Astra Max parity'}
 
@@ -161,9 +162,10 @@ def main(argv=None):
     sub=commands.add_parser('team-accept');sub.add_argument('task_id');sub.add_argument('--review',required=True)
     sub=commands.add_parser('team-resolve');sub.add_argument('task_id');sub.add_argument('--review',required=True)
     sub=commands.add_parser('team-abandon');sub.add_argument('task_id');sub.add_argument('--reason',required=True)
-    for cmd in ('crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-report','crew-execute','crew-repair','crew-review','crew-complete'):commands.add_parser(cmd)
+    for cmd in ('crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-report','crew-execute','crew-repair','crew-review','crew-complete'):commands.add_parser(cmd)
     sub=commands.add_parser('crew-join');sub.add_argument('ticket')
     sub=commands.add_parser('crew-report-read');sub.add_argument('slot',type=int)
+    sub=commands.add_parser('crew-recover');sub.add_argument('slot',type=int)
     sub=commands.add_parser('input-append');sub.add_argument('name');sub.add_argument('--offset',type=int,required=True);sub.add_argument('--chunk',required=True)
     a=p.parse_args(argv)
     event=None
@@ -220,6 +222,8 @@ def main(argv=None):
                         meta['crew_enabled']=True;store.put(key,'meta',meta)
                     elif a.command=='crew-next':result=crew.next(key)
                     elif a.command=='crew-state':result=crew.inspect(key)
+                    elif a.command=='crew-drive':result=Flow(store,ROOT).drive(key)
+                    elif a.command=='crew-recover':result=Flow(store,ROOT).prepare_recovery(key,a.slot)
                     elif a.command=='crew-report-read':result=crew.read_report(key,a.slot)
                     elif a.command in {'crew-execute','crew-repair'}:result=crew.execute(key,stdin_json(),repair=a.command=='crew-repair')
                     else:

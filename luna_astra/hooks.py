@@ -13,6 +13,7 @@ from .codemap import CodeMap
 from .evidence import Evidence
 from .team import Team
 from .crew import Crew
+from .flow import Flow
 from .scan import observe, changes
 from .jobs import Jobs
 from .transport import tool_name, helper_command, worker_shell_input, literal_argv, literal_shell_input
@@ -59,7 +60,7 @@ class Hooks:
         role_file=('FIXED_'+role.upper()+'.md') if self.fixed_seven else (role.upper()+'.md')
         return self._prompt('CORE.md')+'\n\n'+self._prompt(role_file)+'\n\n'+(
             'LUNA_ASTRA_VERSION='+__version__+'\nLUNASTRA_BUILD='+__build__+'\nLOCAL_HELPER_ARGV='+json.dumps(prefix,ensure_ascii=False)+'\nLOCAL_HELPER_COMMAND='+helper_command(prefix)+'\n'+
-            ("Fixed seven: use help.fixed_seven and crew-start/next/execute/review/complete. The team-* commands are retained for migration and checked integration only. " if self.fixed_seven else "Use help for the legacy team protocol. ")+
+            (("Fixed seven parent: use help.fixed_seven and crew-start/next/execute/review/complete. The team-* commands are retained for migration and checked integration only. " if role=="root" else "Fixed seven worker: use your own helper crew-join and crew-report; do not run parent coordination commands. ") if self.fixed_seven else "Use help for the legacy team protocol. ")+
             "Use read/context for bounded source navigation; maps never replace reading. After compaction run context --recover. "
             "Local helpers make no model calls and never change the selected Luna or reasoning setting.")
 
@@ -198,6 +199,10 @@ class Hooks:
                     else:Team(store).pre_followup(key,payload)
                 except HarnessError as exc:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
+            if name=='wait_agent' and role=='root' and meta.get('crew_enabled'):
+                try: Flow(store,self.package).pre_wait(key,uid,payload)
+                except HarnessError as exc:
+                    return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
             if name=='resume_agent' and role=='root' and meta.get('crew_enabled'):
                 target=payload.get('id') if isinstance(payload,dict) else None
                 members=Crew(store,self.package).status(key).get('members',[])
@@ -227,24 +232,27 @@ class Hooks:
                             rest=argv[len(prefix):]
                             if not own_helper:raise HarnessError('planning/review is read-only; use the local helper read/context and crew commands')
                             if rest[:1] in (['--input-json'],['--input-ref']):rest=rest[2:]
-                            if not rest or rest[0] not in {'help','input-append','read','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
+                            if not rest or rest[0] not in {'help','input-append','read','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
                         if own_helper and name=='Bash':
                             tool_update=literal_shell_input(command,prefix)
                 except HarnessError as exc:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
-            if role=='worker' and meta.get('crew_enabled') and name in {'send_input','followup_task','resume_agent','close_agent'}:
+            if role=='worker' and meta.get('crew_enabled') and name in {'send_input','followup_task','resume_agent','close_agent','wait_agent'}:
                 return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Only the root dispatches the six crew members.'})
             native_unjoined=(role=='worker' and event['session_id']==event.get('agent_id') and not meta.get('team_ticket'))
             if native_unjoined and paths:
                 return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Join the assigned LunAstra ticket before editing; the child session ID is not parent identity.'})
             if role=='worker' and name=='Bash' and (meta.get('team_ticket') or native_unjoined):
+                prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
                 try:
                     if not isinstance(payload,dict) or not isinstance(payload.get('command'),str):
                         raise HarnessError('native Bash hook requires command')
-                    prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
                     tool_update=worker_shell_input(payload['command'],prefix,joined=bool(meta.get('team_ticket')),read_only=bool(meta.get('read_only')))
                 except HarnessError as exc:
-                    message=str(exc)+'. Use LOCAL_HELPER_COMMAND + worker-exec --argv-json <JSON array>; choose the executable/shell explicitly. Use --input-json <JSON> before begin/finish/note instead of a shell pipe.'
+                    message=str(exc)+'. Your worker LOCAL_HELPER_COMMAND='+helper_command(prefix)+'. '
+                    message+=('Join your current ticket first with crew-join; do not use the inherited parent helper. ' if not meta.get('team_ticket') else '')
+                    message+=('This assignment is read-only: use read/context/risk and --input-json <report JSON> crew-report. ' if meta.get('read_only') else 'For an assigned implementation use worker-exec --argv-json <JSON array> with an explicit executable. ')
+                    message+='Use --input-json <JSON> before the intended helper instead of a shell pipe.'
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':message})
             if paths and meta.get('assigned_workspace') and not meta.get('read_only'):
                 try:
@@ -297,7 +305,11 @@ class Hooks:
             if tool_name(tool) in {'spawn_agent','send_input','followup_task'} and role=='root':
                 if meta.get('crew_enabled'):Crew(store,self.package).post_dispatch(key,uid,event.get('tool_response'))
                 elif tool_name(tool)=='spawn_agent':Team(store).post_spawn(key,uid,event.get('tool_response'))
-            if tool_name(tool)=='wait_agent' and role=='root':Team(store).observed_statuses(key,event.get('tool_response'))
+            if tool_name(tool)=='wait_agent' and role=='root':
+                if meta.get('crew_enabled'):Flow(store,self.package).post_wait(key,uid,event.get('tool_response'))
+                else:Team(store).observed_statuses(key,event.get('tool_response'))
+            if role=='root' and meta.get('crew_enabled') and tool_name(tool) in {'spawn_agent','send_input','wait_agent'}:
+                parts.append('LunAstra next action (not task completion): '+canonical(Flow(store,self.package).drive(key)))
             result=outcome(event.get('tool_response'));fingerprint=json_hash([tool,payload])
             recorded=store.event(key,'post:'+uid,'tool_result',{'tool':tool,'input_sha256':fingerprint,
                                    'response_sha256':json_hash(event.get('tool_response')),'outcome':result,'turn':generation})
@@ -360,12 +372,15 @@ class Hooks:
             if (d/'evidence.sqlite3').is_file():
                 status=Evidence(d).status();claim=status.get('finish') or {}
                 if claim.get('valid') and claim.get('kind') in {'partial','blocked'} and claim.get('limitations') and store.get(key,'finish_generation')==store.get(key,'generation'):
-                    return self._legacy_stop(store,key,event,coordinator)
+                    # Merely waiting for still-running native work is not an
+                    # external blocker. Genuine blocked state remains explicit.
+                    flow=Flow(store,self.package)
+                    recoverable=(meta.get('role')=='root' and flow.drive(key)['action'] in {'WAIT','DISPATCH','RECOVER','ADVANCE','INTEGRATE','ACCEPT'})
+                    if not recoverable:return self._legacy_stop(store,key,event,coordinator)
             handback={'status':'UNVERIFIED','reason':problem,'worker_key':key}
             store.put(key,'last_handback',handback)
-            token=str(store.get(key,'generation','startup'))
-            if not event.get('stop_hook_active') and store.once(key,'crew_stop_reminder',token):
-                return {'decision':'block','reason':'LUNASTRA_CONTINUE: '+problem+'. Continue the same six sessions, inspect crew-state, and finish current evidence. If the host cannot continue, record an explicit partial/blocked result; do not fabricate workers or success.'}
+            correction=Flow(store,self.package).correction(key,meta,problem)
+            if correction:return correction
             if meta.get('role')=='worker' and meta.get('team_ticket'):
                 Team(store).returned(meta['team_ticket'],handback)
             return {'continue':False,'stopReason':'LunAstra: UNVERIFIED fixed-seven result.',
@@ -421,7 +436,10 @@ class Hooks:
             explanation=problem or ('delegated work is still outstanding' if outstanding else 'changed code has no current checked handback')
             handback={'at':time.time(),'status':'UNVERIFIED','reason':explanation,'changed_paths':changed}
             store.put(key,'last_handback',handback)
-            if not event.get('stop_hook_active') and store.once(key,'stop_reminder',current_generation):
+            if meta.get('crew_enabled'):
+                correction=Flow(store,self.package).correction(key,meta,explanation)
+                if correction:return correction
+            elif not event.get('stop_hook_active') and store.once(key,'stop_reminder',current_generation):
                 return {'decision':'block','reason':'LunAstra: '+explanation+'. Complete the missing implementation/checks and finish with current evidence. If genuinely blocked, record PARTIAL/BLOCKED with the exact limitation. Do not spawn replacement teams, repeat valid checks, or stop protected jobs.'}
             # A bounded failure exit is not a certified completion. Never buy an
             # infinite retry loop by pretending repeated stop feedback is free.

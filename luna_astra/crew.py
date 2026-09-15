@@ -155,6 +155,12 @@ class Crew:
         result['output_paths']=s['output_paths']
         result['review_snapshot_sha256']=s.get('review_snapshot',{}).get('sha256')
         result['actual_model_parity']='NOT_MEASURED'
+        from .flow import Flow
+        flow=Flow(self.store,self.package)
+        result['flow']=flow.drive(owner)
+        result['reports_received']=len(s['reports'])
+        # The local work state is not a claim that the native model is computing.
+        result['native_observations']=[{'slot':r['id'],'observation':flow._native(owner,r)} for r in s['tasks']]
         return result
 
     def read_report(self, owner, slot):
@@ -340,8 +346,10 @@ class Crew:
             calls.append({'slot':slot,'ticket':row['ticket'],'tool':name,'arguments':args,
                           'native_schema_note':'Use the matching native tool actually exposed by the host; never model/effort/role overrides.',
                           'fallback':self.store.get(owner,'crew-fallback:'+row['ticket'])})
+        from .flow import Flow
         return {'calls':calls,'required_total':7,'observed_children':s['observed_children'],
-                'note':'Only native tool results prove dispatch. Reuse these six IDs; wait on unresolved calls, never replace them.'}
+                'flow':Flow(self.store,self.package).drive(owner),
+                'note':'Execute calls, then crew-drive and the indicated native wait. An empty calls array is not completion. Reuse these six IDs; never replace unresolved calls.'}
 
     def pre_dispatch(self, owner, call_id, payload, model, kind):
         s,_=self._current(owner)
@@ -367,7 +375,9 @@ class Crew:
                 if old['input_hash']!=json_hash(payload) or old['kind']!=kind or old['ticket']!=ticket:
                     raise HarnessError('native call ID was reused with different input')
                 return ticket
-            if row['state']!='reserved':raise HarnessError('ticket is already active or returned')
+            if row['state']!='reserved':
+                from .flow import Flow
+                Flow.authorize_recovery(db,owner,s,row,payload,kind)
             if strict_json(row['spec'])['kind']=='implement' and not row['workspace']:raise HarnessError('prepare the assigned checkout with crew-next before dispatch')
             if db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','running','unknown')",(ticket,)).fetchone():
                 raise HarnessError('native dispatch unresolved; do not duplicate it')
@@ -626,7 +636,7 @@ class Crew:
             evidence,_=self._root_evidence(owner,s,require_finish=True)
             if evidence.get('task_hash')!=s['proof']['task_hash']:return 'acceptance definitions changed after certification'
             if fingerprint(root,s['review_paths'])['sha256']!=s['proof']['artifact_sha256']:return 'final artifact changed after certification'
-            self._idle(owner)
+            self._returned(owner,s,clear=True)
             return None
         except (ValueError,OSError,KeyError,TypeError) as exc:
             return str(exc)

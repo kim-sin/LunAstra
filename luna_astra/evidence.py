@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 from .util import HarnessError, strict_json, canonical, file_hash, inside, json_hash, no_symlinks, snapshot
@@ -60,14 +60,13 @@ class Evidence:
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA busy_timeout=30000")
-        db.execute("PRAGMA journal_mode=WAL")
-        try:
+        # Protect setup as well as the yielded body: a corrupt database can
+        # raise during PRAGMA, before a generator context manager has yielded.
+        with closing(sqlite3.connect(self.path, timeout=30, isolation_level=None)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA busy_timeout=30000")
+            db.execute("PRAGMA journal_mode=WAL")
             yield db
-        finally:
-            db.close()
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:

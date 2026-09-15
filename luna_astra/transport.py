@@ -22,7 +22,7 @@ _HELPERS = {
     'help', 'context', 'risk', 'begin', 'run', 'run-all', 'status', 'finish',
     'note', 'trace', 'claim', 'release', 'team-join', 'jobs', 'start-check',
     'worker-exec', 'read', 'input-append', 'crew-join', 'crew-report',
-    'crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
+    'crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
 }
 
 

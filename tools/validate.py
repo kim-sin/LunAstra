@@ -51,13 +51,14 @@ class Tee:
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--pattern',default='test*.py');p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--failfast',action='store_true',help='stop at the first failure/error; successful runs still execute the full selected suite')
     a=p.parse_args()
     if a.output.exists():p.error('output exists; choose a new directory to preserve previous evidence')
     a.output.mkdir(parents=True)
     before=fingerprint();start=time.time()
     with canonical_test_temp(), (a.output/'unittest.log').open('w',encoding='utf-8') as log:
         suite=unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern=a.pattern)
-        result=unittest.TextTestRunner(stream=Tee(log),verbosity=2).run(suite)
+        result=unittest.TextTestRunner(stream=Tee(log),verbosity=2,failfast=a.failfast).run(suite)
     after=fingerprint()
     obj={'pattern':a.pattern,'tests_run':result.testsRun,'failures':len(result.failures),'errors':len(result.errors),
          'skipped':len(result.skipped),'expected_failures':len(result.expectedFailures),'unexpected_successes':len(result.unexpectedSuccesses),

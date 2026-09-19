@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.3.0 batchflow.4
+
+- Recover missing native PostToolUse acknowledgements from exact function-call/output pairs in a host-observed local transcript. Bind the call ID, original input hash, root session, turn when present, transcript identity and current ticket; assistant prose and generic error text cannot authorize another model.
+- Expose root-only crew-reconcile and same-ticket crew-retry. Only the exact observed V1 pre-start capacity rejection can authorize a deliberate retry after its cause is addressed. Unknown/running calls and missing receipts remain protected; no timeout-based respawn.
+- Match opaque V2 messages through unique currently emitted routing intents, not plaintext ticket searches inside encrypted fields. Retain native identity/actual-Luna join, model override, phase, scope and report guards. Recognize dotted multi_agent_v1/v2 tool namespaces.
+- Separate bounded automatic workspace previews from complete streaming contract/certification scans. Remove the old per-file/aggregate byte caps from full scans and review fingerprints, preserve incomplete/read-error rejection, detect additions/removals/late changes and deduplicate overlapping dependency hashes.
+- Preserve byte checks before compute, after compute and at verified ingest; remove the redundant verifier/ingest input pass and output pass. Validate parsed result bytes against the checked output, retaining rejection of verifier mutations and failed checks.
+- Reuse no persistent stat-only content cache. Directory/read errors and late file mutations invalidate proof rather than generating partial success. Review snapshots retain an explicit one-million-entry memory guard.
+- Use CRLF-aware Git attributes and canonicalize CMD bytes when building both archives; reject noncanonical launchers during archive verification. Keep the input checkout unchanged during packaging.
+- Allow up to 300 seconds for terminal Stop/SubagentStop byte certification; ordinary tool hooks retain 10 seconds and Interrupt retains 3. Larger/unstable/network trees may still exceed host or resource limits and are not promised unlimited capacity.
+- Remove the unused hook code-map path, preserve the fixed one-root/six-child roster, and retain account/model settings, unrelated hooks, original v3/v4 state and normal host permission review.
+
+These are software changes. Transcript recovery requires the host to supply a readable, matching transcript with supported records. The opaque-message path validates routing, not encrypted message semantics. Live Desktop/IDE, actual model behavior, subscription usage and comparative output quality are not certified by fixture tests. See [correction details](docs/RELEASE_4.3.0.md).
+
 ## 4.3.0 batchflow.3
 
 - Skip operational hooks for native read/search and other unhandled tools, both at matcher and early parsed-event boundaries. Model authorization remains unchanged.
@@ -160,12 +174,10 @@ Limits: no live Windows/Desktop model run was performed as part of these local s
 
 - Rebuilt the project around a Luna-led transactional work plan, bounded native delegation, worktree isolation, checked integration, verification records, and source-only distribution.
 
-## 2.x — legacy pre-public prototype era
+## 2.x — legacy pre-public prototype line
 
-- The current repository does not preserve authoritative 2.x release notes or artifacts.
-- LunAstra 3.0.0 is the first retained architectural rebuild in the public changelog; earlier details are intentionally not reconstructed from memory or inference.
+- No authoritative detailed 2.x release notes/artifacts are retained in the current repository; earlier changes are not invented.
 
-## 1.x — legacy pre-public prototype era
+## 1.x — legacy pre-public prototype line
 
-- The current repository does not preserve authoritative 1.x release notes or artifacts.
-- This section exists so the history runs from the earliest named major line to the current release without inventing undocumented changes.
+- No authoritative detailed 1.x release notes/artifacts are retained in the current repository; earlier changes are not invented.

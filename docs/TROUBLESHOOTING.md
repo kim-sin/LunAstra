@@ -86,3 +86,12 @@ This does not repair an unacknowledged native spawn by guessing it failed: the h
 For fixed-crew root shell calls use the session's LOCAL_HELPER_COMMAND for registered checks/research. Use supported scoped edit tools for source changes. Direct exec_command uses cmd; native Bash uses command. The Windows transport stages large JSON once. A registered command still executes with native host permissions and is not a filesystem sandbox.
 
 Compaction recovery retains the contract, reports and notes outside the prompt. crew-step returns current actions; context --recover returns the complete saved context. Do not equate the short recovery message with having read the full original. Previous legacy dynamic sessions must not be converted to fixed-seven merely by compaction.
+
+
+## batchflow.4 receipt and streaming corrections
+
+Run crew-step normally; it reconciles supported authentic native transcript receipts before selecting the next action. crew-reconcile performs just that recovery. REJECTED_BEFORE_START is different from UNKNOWN: only the observed exact capacity rejection permits crew-retry SLOT --reason TEXT after addressing the cause. Do not use retries to change host settings, replace a possibly running child or fabricate an acknowledgement. Missing transcripts, unsupported receipt formats and ambiguous errors remain unresolved.
+
+Full contract/certification scans now include large files. Preserve a changing or inaccessible tree and diagnose the actual read/race error; do not delete files to obtain COMPLETE. Existing active incomplete baselines are not overwritten. A 300-second terminal hook ceiling and available memory/I/O still apply.
+
+For LF-only source uploads, use tools/release.py to produce canonical Windows CMD bytes and fresh hashes. Do not manually change a ZIP without rebuilding its manifest. The archive verifier rejects noncanonical CMD bytes.

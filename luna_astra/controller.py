@@ -21,9 +21,11 @@ class Controller:
 
     def _step(self, owner, *, details=False):
         started=time.monotonic()
+        from .native_receipts import reconcile
+        receipts=reconcile(self.flow.crew,owner)
         action=self.flow.drive(owner);kind=action['action']
         result={'schema':1,'next':action,'calls':[],'automatic_semantic_approval':False,
-                'settings_changed':False,'native_calls_must_be_acknowledged':True}
+                'settings_changed':False,'native_calls_must_be_acknowledged':True, 'recovered_native_receipts':receipts}
         if kind=='DISPATCH':
             dispatch=self.flow.crew.next(owner)
             result['calls']=dispatch.get('calls',[])

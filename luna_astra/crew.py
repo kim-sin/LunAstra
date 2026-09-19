@@ -68,18 +68,19 @@ def _put(db, owner, s):
                (owner, STATE, canonical(s)))
 
 
-def fingerprint(root: Path, paths: list[str]):
-    """Bounded byte/mode identity, including binary files and absent outputs.
+def fingerprint(root: Path, paths: list[str], *, max_entries=1000000):
+    """Streaming byte/mode identity, including large binary files and absent outputs.
 
-    Exceeding bounds is a visible blocker, never silent partial coverage.
+    Entry-count bounds protect memory; byte size never silently excludes a file.
     """
     root = Path(root).absolute(); no_symlinks(root); root = root.resolve()
-    result = {}; count = 0; total = 0
+    result = {}; count = 0; directories = {}; file_stamps = {}; missing_paths = []
     for name in paths:
         p = inside(root, name)
         pending = [p]
         if not p.exists():
             result[name] = {'missing': True}
+            missing_paths.append(p)
             continue
         while pending:
             p = pending.pop(); no_symlinks(p)
@@ -87,18 +88,28 @@ def fingerprint(root: Path, paths: list[str]):
             if rel in result:
                 continue
             count += 1
-            if count > 20000:
-                raise HarnessError('review snapshot exceeds 20000 entries; narrow declared scopes')
+            if count > max_entries:
+                raise HarnessError('review snapshot exceeds entry budget; split declared scopes explicitly')
             if p.is_dir():
+                from .util import stat_identity
+                directories[p]=stat_identity(p.stat())
                 result[rel] = {'directory': True}
                 pending.extend(sorted(p.iterdir(), reverse=True))
             elif p.is_file():
-                stat = p.stat(); total += stat.st_size
-                if stat.st_size > 64*1024*1024 or total > 512*1024*1024:
-                    raise HarnessError('review snapshot exceeds byte budget; narrow declared scopes')
+                stat = p.stat()
                 result[rel] = {'sha256': file_hash(p), 'mode': stat.st_mode & 0o777}
+                from .util import stat_identity
+                file_stamps[p] = stat_identity(stat)
             else:
                 raise HarnessError('special file in review scope: '+rel)
+    from .util import stat_identity
+    from itertools import chain
+    for path,stamp in chain(directories.items(),file_stamps.items()):
+        no_symlinks(path)
+        if stat_identity(path.stat())!=stamp:raise HarnessError('path changed during snapshot: '+str(path))
+    for path in missing_paths:
+        no_symlinks(path)
+        if path.exists():raise HarnessError('missing output appeared during snapshot: '+str(path))
     return {'sha256': json_hash(result), 'entries': result}
 
 
@@ -290,8 +301,19 @@ class Crew:
              'requirements':requirements,**scopes,'request_hash':request_hash,'model':meta['model'],
              'created_at':time.time(),'ever_wrote':[],'native':native,'mode':spec.get('mode','task'),'resource_registry_hash':registry['registry_hash'],'resource_roles':registry['roles']}
         self._idle(owner)
+        with self.store.db() as db:
+            prior=_get(db,owner)
+        baseline=self.store.get(owner,'source_baseline')
+        full_baseline=None
+        if prior is None and (not isinstance(baseline,dict) or baseline.get('complete') is not True):
+            # Do not hold SQLite's writer lock while streaming large inputs.
+            from .scan import require_complete
+            full_baseline=observe(root,full=True)
+            require_complete(full_baseline,full_baseline)
         with self.store.db(True) as db:
             old = _get(db,owner)
+            if full_baseline is not None and (old is not None or self.store.get(owner,'request_hash')!=request_hash or self.store.get(owner,'source_baseline')!=baseline):
+                raise HarnessError('contract or preview changed during full preflight; retry without replacing any work')
             if old and old['phase'] != 'COMPLETE' and not revise:
                 if all(old.get(k)==s[k] for k in ('goal','requirements','evidence_paths','output_paths','request_hash','mode','resource_roles','native')):
                     return self.summary(owner)
@@ -308,6 +330,9 @@ class Crew:
                 raise HarnessError('finish the previous dynamic team before enabling fixed seven')
             for i in range(1,7):
                 db.execute('INSERT OR IGNORE INTO crew_members(owner,slot) VALUES(?,?)',(owner,i))
+            if full_baseline is not None:
+                db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'initial-preview-baseline',canonical(baseline)))
+                db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'source_baseline',canonical(full_baseline)))
             db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'resource_registry',canonical(registry)))
             self._round(db,owner,s,definition)
         return self.summary(owner)
@@ -409,6 +434,7 @@ class Crew:
         members={m['slot']:m for m in s['members']}
         for row in s['tasks']:
             if row['state']!='reserved':continue
+            if self.store.get(owner,'native-rejected:'+str(row['ticket'])):continue
             if warmup and calls:break
             with self.store.db() as db:
                 exists=db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','running','unknown')",(row['ticket'],)).fetchone()
@@ -429,6 +455,8 @@ class Crew:
             if len(message)>24000:raise HarnessError('task capsule exceeds 24000 characters; use concise obligations and source paths')
             from .native import dispatch, target
             name,args=dispatch(s,slot,message,target(self.store,owner,slot,member['agent_id']))
+            from .native import remember_intent
+            remember_intent(self.store,owner,s,row['ticket'],name,args)
             calls.append({'slot':slot,'ticket':row['ticket'],'tool':name,'arguments':args,
                           'native_schema_note':'Use the matching native tool actually exposed by the host; never model/effort/role overrides.',
                           'fallback':self.store.get(owner,'crew-fallback:'+row['ticket'])})
@@ -443,8 +471,8 @@ class Crew:
         if model!=s['model']:raise HarnessError('dispatch model differs from the original root Luna')
         if not isinstance(payload,dict):raise HarnessError('invalid native dispatch input')
         matches=TICKET.findall(payload.get('message','')) if isinstance(payload.get('message'),str) else []
-        if len(matches)!=1:raise HarnessError('fixed crew dispatch requires exactly one current ticket')
-        ticket=matches[0]
+        from .native import dispatch_ticket
+        ticket, opaque = dispatch_ticket(self.store,owner,s,kind,payload,matches)
         if any(payload.get(n) is not None for n in ('model','reasoning_effort','service_tier','agent_type')):
             raise HarnessError('inherit selected Luna and effort; no model/effort/custom-role override')
         if payload.get('interrupt'):raise HarnessError('do not interrupt fixed-crew work')
@@ -460,9 +488,11 @@ class Crew:
                 if old['input_hash']!=json_hash(payload) or old['kind']!=kind or old['ticket']!=ticket:
                     raise HarnessError('native call ID was reused with different input')
                 return ticket
+            if self.store.get(owner,'native-rejected:'+ticket):
+                raise HarnessError('host rejected this unstarted call; address the cause and use crew-retry for this same ticket',code='NATIVE_REJECTED')
             if row['state']!='reserved':
                 from .flow import Flow
-                Flow.authorize_recovery(db,owner,s,row,payload,kind)
+                Flow.authorize_recovery(db,owner,s,row,payload,kind,message_opaque=opaque)
             if strict_json(row['spec'])['kind']=='implement' and not row['workspace']:raise HarnessError('prepare the assigned checkout with crew-next before dispatch')
             if db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','running','unknown')",(ticket,)).fetchone():
                 raise HarnessError('native dispatch unresolved; do not duplicate it')
@@ -729,7 +759,7 @@ class Crew:
         # with the hook about unverified changes. Never ignore unknown changes.
         baseline = self.store.get(owner, 'source_baseline')
         from .scan import changes, require_complete
-        after=observe(root)
+        after=observe(root,full=True)
         require_complete(baseline,after)
         unverified = uncovered(root, changes(baseline,after), dependencies)
         if unverified:
@@ -785,6 +815,23 @@ class Crew:
                        'actual_model_parity':'NOT_MEASURED'})
             _put(db,owner,clean)
         return self.summary(owner)
+
+    def retry_native(self, owner, slot, reason):
+        """Retry the same ticket only after a proven pre-start host refusal."""
+        s,_=self._current(owner)
+        if type(slot) is not int or not 1<=slot<=6:raise HarnessError('slot must be 1..6')
+        reason=text(reason,'actual rejection cause addressed',2000)
+        row=next(r for r in s['tasks'] if r['id']==f's{slot}')
+        with self.store.db(True) as db:
+            refusal=self.store.get(owner,'native-rejected:'+str(row['ticket']))
+            member=db.execute('SELECT * FROM crew_members WHERE owner=? AND slot=?',(owner,slot)).fetchone()
+            unresolved=db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','unknown','running')",(row['ticket'],)).fetchone()
+            current=_get(db,owner)
+            if not refusal or refusal.get('source')!='HOST_TRANSCRIPT_CALL_OUTPUT' or unresolved or row['state']!='reserved' or row['agent_id'] or member['agent_id'] or current['plan_id']!=s['plan_id']:
+                raise HarnessError('retry requires a proven unstarted current call; unknown/running identities are never replaced')
+            db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'native-retry:'+refusal['call_id'],canonical({'receipt':refusal,'reason':reason,'at':time.time()})))
+            db.execute('DELETE FROM kv WHERE scope=? AND name=?',(owner,'native-rejected:'+row['ticket']))
+        return {'retry_authorized':True,'slot':slot,'ticket':row['ticket'],'new_agent_started':False,'next':'crew-step'}
 
     def completion_problem(self, owner):
         try:

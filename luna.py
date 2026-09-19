@@ -85,7 +85,8 @@ HELP['team_plan_stdin']={'goal':'Current requested outcome','parallel_limit':6,'
 HELP['team_rules']=['The original Luna chooses the number of useful independent units; 6 is only the concurrency ceiling, not an optimum.','Call team-next once per ready wave, then use native Codex tools; reservations alone launch nothing.','Use separate checkouts for implementation; dirty/non-Git roots require single-writer fallback.','Accept findings only after inspecting their evidence. Accept implementation only after checked integration, then verify the combined result.','No hidden model API and no inference-setting change.']
 
 
-HELP['commands'] += ['crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover SLOT','crew-report-read SLOT','input-append NAME --offset N --chunk TEXT','crew-join TICKET','crew-report','crew-execute','crew-review','crew-repair','crew-complete']
+HELP['commands'] += ['crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-reconcile','crew-retry SLOT --reason TEXT','crew-recover SLOT','crew-report-read SLOT','input-append NAME --offset N --chunk TEXT','crew-join TICKET','crew-report','crew-execute','crew-review','crew-repair','crew-complete']
+HELP['native_receipts']={'automatic':'crew-step reconciles exact host transcript call/output receipts when available','explicit':'crew-reconcile','retry':'crew-retry SLOT --reason ACTUAL_CAUSE_ADDRESSED only after a proven pre-start capacity refusal','limit':'No timeout/generic-error respawn; unknown identities remain protected'}
 HELP['fixed_seven']={'total':7,'root':1,'children':6,'reuse':'same observed native IDs across all phases',
     'start':{'goal':'Requested outcome','requirements':['Observable acceptance requirement'], 'evidence_paths':['input.txt'],'output_paths':['output.txt'],'native':{'protocol':'v1','context':'capsule'}},
     'execute':{'decision':'Source-backed choice after all six planning reports','tasks':'Exactly s1..s6 using team task schema; s5/s6 always read-only; implement only locked output paths'},
@@ -177,6 +178,8 @@ def main(argv=None):
     sub=commands.add_parser('team-abandon');sub.add_argument('task_id');sub.add_argument('--reason',required=True)
     for cmd in ('crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-report','crew-execute','crew-repair','crew-review','crew-complete'):commands.add_parser(cmd)
     sub=commands.add_parser('crew-join');sub.add_argument('ticket')
+    commands.add_parser('crew-reconcile')
+    sub=commands.add_parser('crew-retry');sub.add_argument('slot',type=int);sub.add_argument('--reason',required=True)
     sub=commands.add_parser('crew-report-read');sub.add_argument('slot',type=int)
     sub=commands.add_parser('crew-recover');sub.add_argument('slot',type=int)
     sub=commands.add_parser('input-append');sub.add_argument('name');sub.add_argument('--offset',type=int,required=True);sub.add_argument('--chunk',required=True)
@@ -273,6 +276,10 @@ def main(argv=None):
                         # Promote only after the explicit new contract succeeds.
                         if not meta.get('crew_enabled'):meta['context_emitted']=False
                         meta['crew_enabled']=True;store.put(key,'meta',meta)
+                    elif a.command=='crew-reconcile':
+                        from luna_astra.native_receipts import reconcile
+                        result=reconcile(crew,key)
+                    elif a.command=='crew-retry':result=crew.retry_native(key,a.slot,a.reason)
                     elif a.command=='crew-capacity':result=crew.capacity(key,stdin_json())
                     elif a.command=='crew-next':result=crew.next(key)
                     elif a.command=='crew-state':result=crew.inspect(key)

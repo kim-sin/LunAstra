@@ -87,7 +87,7 @@ An unverified terminal handback stays unverified and frees no extra model slot; 
 
 ## Snapshot and resource boundaries
 
-Final snapshots include bytes, file modes, directories and absent declared paths. Symlinks, special files and escapes are refused. Bounds: 20,000 entries, 64 MiB per file, 512 MiB aggregate. Exceeding a bound is a visible error; coverage is never silently truncated. Work capsules and reports have separate size bounds to avoid flooding the root context.
+Final snapshots include bytes, file modes, directories and absent declared paths. Symlinks, special files and escapes are refused. Full byte snapshots stream without per-file or aggregate byte caps. An explicit 1,000,000-entry guard protects review memory. Exceeding resources or finding unreadable/changing paths is an error, never partial certification. Automatic previews retain separate small budgets. Work capsules and reports have separate size bounds to avoid flooding the root context.
 
 Model concurrency, reasoning effort, model availability and usage accounting belong to the native host. LunAstra does not raise them. Fixed seven retains six sessions but does not force six simultaneous writes or busy-wait polling. Reusing sessions preserves work, but inherited context, dispatch and review still have a usage cost.
 

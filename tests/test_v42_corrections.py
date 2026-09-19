@@ -171,7 +171,7 @@ class ObservationCorrectionTests(unittest.TestCase):
     def test_large_unreported_file_invalidates_current_completion(self):
         self.f.complete();(self.f.root/'large.bin').write_bytes(b'x'*(2*1024*1024+1))
         self.assertFalse(observe(self.f.root)['complete'])
-        self.assertIn('incomplete',self.f.crew.completion_problem(self.f.owner))
+        self.assertIn('changed files are outside declared verification',self.f.crew.completion_problem(self.f.owner))
         self.assertFalse(self.f.crew.summary(self.f.owner)['complete'])
     def test_partial_baseline_cannot_be_certified(self):
         self.f.complete();base=self.f.store.get(self.f.owner,'source_baseline');base['complete']=False

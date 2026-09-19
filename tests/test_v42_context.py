@@ -31,7 +31,7 @@ class DeferredScanTests(unittest.TestCase):
             self.f.hooks.handle({**self.f.event,'hook_event_name':'UserPromptSubmit','prompt':'check again'})
             self.assertEqual(1,scan.call_count)
     def test_code_prompt_does_not_build_map_automatically(self):
-        with patch.object(Hooks,'_map',side_effect=AssertionError('automatic map')):
+        with patch('luna_astra.codemap.CodeMap.__init__',side_effect=AssertionError('automatic map')):
             self.f.hooks.handle({**self.f.event,'hook_event_name':'UserPromptSubmit','prompt':'fix app.js state bug and test'})
     def test_read_only_join_does_not_scan_six_workspaces(self):
         self.f.start()

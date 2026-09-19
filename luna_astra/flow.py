@@ -153,9 +153,15 @@ class Flow:
                 "SELECT d.ticket,d.state FROM dispatches d JOIN work w ON d.ticket=w.ticket WHERE w.owner=? AND w.plan_id=? AND d.state IN ('pending','unknown')",
                 (owner,s['plan_id']))}
         for row in s['tasks']:
+            refusal=self.store.get(owner,'native-rejected:'+str(row['ticket']))
+            if refusal:
+                return {**base,'action':'BLOCKED','kind':'HOST_CAPABILITY','slot':row['id'],
+                        'reason':refusal['reason'],'helper':'crew-retry '+row['id'][1:]+' --reason ACTUAL_CAUSE_ADDRESSED',
+                        'not_started':True,'same_ticket_preserved':True}
             if row['ticket'] in unsettled:
                 return {**base,'action':'BLOCKED','reason':'Native dispatch acknowledgement unresolved; retain this call and all six sessions, never spawn replacements',
-                        'slot':row['id'],'dispatch_state':unsettled[row['ticket']]}
+                        'slot':row['id'],'dispatch_state':unsettled[row['ticket']],
+                        'helper':'crew-reconcile (reads only a host-observed transcript); never infer failure from a timeout'}
         due=self.store.get(owner,'native-list-due')
         if is_v2(s) and due and due.get('plan_id')==s['plan_id']:
             return {**base,'action':'OBSERVE_NATIVE','native_call':{'tool':'list_agents','arguments':{}},
@@ -281,21 +287,25 @@ class Flow:
                      'Do not repeat unrelated implementation, delete old results, weaken requirements or report success merely because a file appeared. '
                      'Use your own helper crew-join, then crew-report and the appropriate checked handback.')
         tool,payload=dispatch(s,slot,message,target(self.store,owner,slot,row['agent_id']))
-        self.store.put(owner,'flow-recovery:'+row['ticket'],{'count':count+1,'payload_hash':json_hash(payload),'plan_id':s['plan_id'],
+        from .native import remember_intent, routing_hash
+        remember_intent(self.store,owner,s,row['ticket'],tool,payload)
+        self.store.put(owner,'flow-recovery:'+row['ticket'],{'count':count+1,'payload_hash':json_hash(payload),'routing_hash':routing_hash(tool,payload),'plan_id':s['plan_id'],
                       'native_call_id':native['call_id'],'epoch':native['epoch'],
                       'mode':'reassess' if stale else 'missing-report','source_observation':observation if stale else None})
         return {'tool':tool,'arguments':payload,'slot':slot,'ticket':row['ticket'],'reuse_same_session':True}
 
     @staticmethod
-    def authorize_recovery(db, owner, s, row, payload, kind):
+    def authorize_recovery(db, owner, s, row, payload, kind, *, message_opaque=False):
         """Inside Crew's dispatch transaction, so failure never half-reopens work."""
+        from .native import routing_hash
         request=_value(db,owner,'flow-recovery:'+row['ticket'])
         native=_value(db,owner,'flow-native:'+row['ticket'])
         count=_value(db,owner,'flow-recovery-count:'+row['ticket'],0)
         if (kind!=('followup_task' if is_v2(s) else 'send_input') or row['state']!='returned' or not request or not native or
                 native['state']!='completed' or request['plan_id']!=s['plan_id'] or
                 request['epoch']!=_epoch(db,row['ticket']) or request['native_call_id']!=native['call_id'] or
-                request['payload_hash']!=json_hash(payload) or request['count']!=count+1 or count>=MAX_RECOVERIES):
+                ((not message_opaque and request['payload_hash']!=json_hash(payload)) or
+                 (message_opaque and request.get('routing_hash')!=routing_hash(kind,payload))) or request['count']!=count+1 or count>=MAX_RECOVERIES):
             raise HarnessError('same-ticket recovery requires a fresh crew-recover instruction and an observed native completion')
         handback=strict_json(row['result'] or '{}')
         report=db.execute('SELECT body FROM crew_reports WHERE ticket=?',(row['ticket'],)).fetchone()

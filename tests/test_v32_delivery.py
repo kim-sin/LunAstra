@@ -143,8 +143,18 @@ class ArchiveIntegrityTests(unittest.TestCase):
             git('-c','core.autocrlf=true','add','-A')
             tracked={n.decode('utf-8') for n in git('ls-files','-z').split(b'\0') if n}
             self.assertEqual(tracked,set(files))
+            checkout=repo/'checked-out'
+            checkout.mkdir()
+            git('checkout-index','--all','--force','--prefix='+checkout.as_posix()+'/')
             for name,raw in files.items():
-                with self.subTest(path=name):self.assertEqual(git('show',':'+name),raw)
+                with self.subTest(path=name):
+                    indexed=git('show',':'+name)
+                    # Git stores canonical LF for text; CMD checkouts/distributions
+                    # must still contain exactly the CRLF bytes we certified.
+                    expected=raw.replace(b'\r\n',b'\n') if name.lower().endswith('.cmd') else raw
+                    self.assertEqual(indexed,expected)
+                    self.assertEqual(release.distribution_bytes(name,indexed),raw)
+                    self.assertEqual((checkout/name).read_bytes(),raw)
             git('diff','--cached','--check')
             # Intentional CRLF is valid, actual trailing spaces must still fail.
             (repo/'INVALID.cmd').write_bytes(b'@echo off   \r\n')

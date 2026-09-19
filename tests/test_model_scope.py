@@ -85,7 +85,7 @@ class NoSideEffects(unittest.TestCase):
              patch.object(Hooks,'_prompt',side_effect=AssertionError('prompt read')), \
              patch('luna_astra.hooks.observe',side_effect=AssertionError('workspace scan')), \
              patch('luna_astra.hooks.identity',side_effect=AssertionError('identity path scan')), \
-             patch('luna_astra.hooks.CodeMap',side_effect=AssertionError('code map')), \
+             patch('luna_astra.codemap.CodeMap.__init__',side_effect=AssertionError('code map')), \
              patch('subprocess.Popen',side_effect=AssertionError('child process')):
             for model in NEGATIVE:
                 for event in EVENTS:

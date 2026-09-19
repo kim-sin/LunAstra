@@ -73,7 +73,7 @@ def definition(python,release,state,event):
             "$raw | "+powershell_argv(argv)+'; exit $LASTEXITCODE')
     windows='powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand '+base64.b64encode(script.encode('utf-16-le')).decode('ascii')
     command=windows if os.name=='nt' else posix
-    handler={'type':'command','command':command,'commandWindows':windows,'statusMessage':OWNER+event,'timeout':10 if event!='Interrupt' else 3}
+    handler={'type':'command','command':command,'commandWindows':windows,'statusMessage':OWNER+event,'timeout':300 if event in {'Stop','SubagentStop'} else 3 if event=='Interrupt' else 10}
     if event not in {'Stop','SubagentStop','Interrupt','PostCompact'}:handler['additionalContextLimit']=3500
     group={'hooks':[handler]}
     if event in {'PreToolUse','PostToolUse'}:group['matcher']=MATCHER

@@ -9,7 +9,6 @@ from . import __version__, __build__
 from .util import HarnessError, strict_json, digest, canonical, json_hash, no_symlinks
 from .store import Store, evidence_directory
 from .coordination import Coordinator, Conflict, edit_paths, assigned_edit_input
-from .codemap import CodeMap
 from .evidence import Evidence
 from .team import Team
 from .crew import Crew
@@ -291,7 +290,7 @@ class Hooks:
                             rest=argv[len(prefix):]
                             if not own_helper:raise HarnessError('planning/review is read-only; use the local helper read/context and crew commands')
                             if rest[:1] in (['--input-json'],['--input-ref']):rest=rest[2:]
-                            if not rest or rest[0] not in {'help','input-append','read','read-bytes','read-source','resources','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-step','research-status','research-read','research-recover','research-pause','research-resume','crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
+                            if not rest or rest[0] not in {'help','input-append','read','read-bytes','read-source','resources','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-step','research-status','research-read','research-recover','research-pause','research-resume','crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-reconcile','crew-retry','crew-recover','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
                         if own_helper:
                             rewrite=literal_shell_input(command,prefix)
                             if rewrite is not None:tool_update={**payload,field:rewrite['command']}
@@ -359,6 +358,9 @@ class Hooks:
                 parts.append(self._module(store,key,'VERIFY',generation))
                 store.put(key,'changed-path-hints',sorted(set(store.get(key,'changed-path-hints',[]))|set(normalized_paths)))
                 store.put(key,'edited_in_turn',generation)
+            if role=='root' and meta.get('crew_enabled') and name in {'spawn_agent','send_input','followup_task'}:
+                from .native_receipts import remember
+                remember(store,key,event)
             store.event(key,'pre:'+uid,'tool_start',{'tool':tool,'input_sha256':json_hash(payload),'edit_paths':paths,
                                                      'outcome':'RUNNING','turn':generation})
         elif kind=='PostToolUse':
@@ -426,13 +428,6 @@ class Hooks:
             result[field]=(marker+' '+scope+'\n'+text[len(marker):].lstrip()) if text.startswith(marker) else scope+'\n'+text
         return result
 
-    def _map(self,root,query,hints):
-        try:
-            mapper=CodeMap(root,self.state/'maps');index=mapper.build(max_seconds=2.5)
-            return [mapper.select(index,query,hints,max_chars=2200)['text']]
-        except (OSError,ValueError,RecursionError):
-            return ['Local map unavailable. Inspect relevant source using existing tools; do not assume complete coverage.']
-
     @staticmethod
     def _team_summary(status):
         return {'configured':status['configured'],'active':status['active'],'complete':status['complete'],
@@ -484,7 +479,7 @@ class Hooks:
         reader=meta.get('crew_enabled') and meta.get('read_only') and not edit_attempt
         # Only read-only crew handbacks skip this observation; their final
         # references/snapshots are still byte-validated by the crew engine.
-        after=({'files':{},'complete':False,'reason':'read_only_shared_scope'} if reader else observe(root))
+        after=({'files':{},'complete':False,'reason':'read_only_shared_scope'} if reader else observe(root,full=True) if meta.get('crew_enabled') else observe(root))
         changed=changes(before,after) if before else []
         before=before or {'files':{},'complete':False}
         if reader:

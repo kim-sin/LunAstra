@@ -169,3 +169,33 @@ def capsule_ready(store, owner, state):
             meta=store.get(member['worker_key'],'meta',{})
             if meta.get('native_model_observed')==state['model'] and meta.get('team_owner')==owner:return True
     return False
+
+
+def routing_hash(kind, payload):
+    """Visible routing identity excludes only the host-encrypted message field."""
+    return json_hash([kind,{k:v for k,v in payload.items() if k!='message'}])
+
+
+def remember_intent(store, owner, state, ticket, kind, payload):
+    store.put(owner,'native-intent:'+ticket,{'plan_id':state['plan_id'],'kind':kind,
+              'routing_hash':routing_hash(kind,payload),'payload_hash':json_hash(payload)})
+
+
+def dispatch_ticket(store, owner, state, kind, payload, matches):
+    if len(matches)==1:
+        return matches[0],False
+    if matches or not is_v2(state) or not isinstance(payload.get('message'),str) or not payload['message']:
+        raise HarnessError('fixed crew dispatch requires exactly one current ticket')
+    # V2 messages are opaque to PreToolUse. Authorize only a route emitted by
+    # this root for one current reservation; full message semantics remain
+    # uninspected, and actual current-ticket join/report gates remain mandatory.
+    found=[]
+    for row in state['tasks']:
+        if row['state'] not in {'reserved','returned'} or not row['ticket']:
+            continue
+        intent=store.get(owner,'native-intent:'+row['ticket'])
+        if intent and intent.get('plan_id')==state['plan_id'] and intent.get('kind')==kind and intent.get('routing_hash')==routing_hash(kind,payload):
+            found.append(row['ticket'])
+    if len(found)!=1:
+        raise HarnessError('opaque V2 message has no unique current emitted route; use the exact crew-step call',code='NATIVE_ROUTE_UNCONFIRMED')
+    return found[0],True

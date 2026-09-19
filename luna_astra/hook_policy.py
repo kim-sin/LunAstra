@@ -10,7 +10,7 @@ NATIVE = frozenset({'spawn_agent','wait_agent','send_input','close_agent',
 EDIT = frozenset({'apply_patch','Edit','Write','edit_file','write_file'})
 SHELL = frozenset({'Bash','exec_command','shell_command'})
 TOOLS = NATIVE | EDIT | SHELL | {'Agent'}
-MATCHER = r'^(?:(?:functions\.)?(?:'+'|'.join(sorted(TOOLS))+r')|(?:multi_agent_v1|multi_agent_v2)(?:'+'|'.join(sorted(NATIVE))+r'))$'
+MATCHER = r'^(?:(?:functions\.)?(?:'+'|'.join(sorted(TOOLS))+r')|(?:multi_agent_v1|multi_agent_v2)\.?(?:'+'|'.join(sorted(NATIVE))+r'))$'
 _MATCH = re.compile(MATCHER)
 
 def relevant(event):
@@ -27,6 +27,7 @@ def canonical_tool(value):
     if value.startswith('functions.') and value[10:] in TOOLS:
         return value[10:]
     for prefix in ('multi_agent_v1','multi_agent_v2'):
-        if value.startswith(prefix) and value[len(prefix):] in NATIVE:
-            return value[len(prefix):]
+        suffix=value[len(prefix):] if value.startswith(prefix) else ''
+        if suffix.startswith('.'):suffix=suffix[1:]
+        if suffix in NATIVE:return suffix
     return value

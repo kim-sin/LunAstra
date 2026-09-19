@@ -1,3 +1,5 @@
+> Current 4.3.0 batchflow.4 corrections supersede the historical limits below where noted: [native receipts, opaque V2 routing, full streaming scans and packaging](RELEASE_4.3.0.md). No live-host certification is implied.
+
 > 4.2 update: current short-context, batch-wait and V1/V2 behavior is specified in [V4_2_PERFORMANCE.md](V4_2_PERFORMANCE.md). Older full-history/V1-only descriptions below apply to preserved legacy mode, not new capsule runs. Actual host verification remains separate.
 
 # Limits

@@ -554,7 +554,6 @@ class Research:
             else:
                 outputs=fingerprint(root,job['outputs'])
                 if run(job['verify_argv'],'verify')!=0:state='FAILED'
-                elif before!=self._context(root,job) or fingerprint(root,job['outputs'])!=outputs:state='STALE'
                 else:
                     result_file=inside(root,job['result_path'])
                     if not result_file.is_file() or result_file.stat().st_size>4*1024*1024:raise HarnessError('result JSON missing or oversized')
@@ -566,9 +565,15 @@ class Research:
                         value=value[key]
                     if type(value) not in {int,float} or not Decimal(str(value)).is_finite():raise HarnessError('score is not a finite JSON number')
                     # Bind parsing to the same output snapshot used by verification.
-                    if fingerprint(root,job['outputs'])!=outputs or before!=self._context(root,job):raise HarnessError('result or input changed while ingesting')
+                    from .util import digest
+                    parsed_sha=digest(data)
+                    from .paths import relative_id
+                    expected_result=next((entry.get('sha256') for name,entry in outputs['entries'].items() if relative_id(name)==relative_id(job['result_path'])),None)
+                    if parsed_sha!=expected_result or fingerprint(root,job['outputs'])!=outputs or before!=self._context(root,job):
+                        state='STALE'
+                        raise HarnessError('result or input changed while ingesting')
                     record.update(score=str(value),outputs_fingerprint=outputs['sha256'],result_path=job['result_path'],
-                                  result_sha256=file_hash(result_file),metric_unit=study['configuration']['metric_unit'])
+                                  result_sha256=parsed_sha,metric_unit=study['configuration']['metric_unit'])
                     state='VERIFIED'
         except (OSError,ValueError,KeyError,TypeError,RecursionError) as exc:record['error']=type(exc).__name__+': '+str(exc)
         record['ended_at']=time.time()

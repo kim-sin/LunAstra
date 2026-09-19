@@ -23,7 +23,7 @@ _HELPERS = {
     'note', 'trace', 'claim', 'release', 'team-join', 'jobs', 'start-check',
     'worker-exec', 'read', 'read-bytes', 'read-source', 'resources', 'input-append', 'crew-join', 'crew-report',
     'crew-step','research-configure','research-enqueue','research-status','research-start','research-recover','research-pause','research-finish','research-wait','research-cancel','research-resume','research-policy','research-read',
-    'crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
+    'crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-reconcile','crew-retry','crew-recover','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
 }
 
 

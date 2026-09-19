@@ -108,27 +108,36 @@ def snapshot(root: Path, dependencies: list[str]) -> dict[str, str]:
     if not dependencies or not isinstance(dependencies, list):
         raise HarnessError("at least one explicit dependency is required")
     root = Path(root).absolute(); no_symlinks(root); root = root.resolve()
-    result: dict[str, str] = {}
+    result: dict[str, str] = {}; stamps = {}
+    def remember(path, directory=False):
+        rel=path.relative_to(root).as_posix() + ('/' if directory else '')
+        if rel in result:return
+        before=path.stat(); stamps[path]=stat_identity(before)
+        result[rel]='DIRECTORY' if directory else file_hash(path)
+    def walk_error(exc):
+        raise HarnessError("dependency walk failed: " + str(exc)) from exc
     for dep in dependencies:
         target = inside(root, dep)
         if not target.exists():
             raise HarnessError(f"dependency missing: {dep}")
         if target.is_dir():
-            result[target.relative_to(root).as_posix() + "/"] = "DIRECTORY"
-            for current, dirs, files in os.walk(target, followlinks=False):
+            if target.relative_to(root).as_posix()+'/' in result:continue
+            remember(target,True)
+            for current, dirs, files in os.walk(target, followlinks=False, onerror=walk_error):
+                current=Path(current);no_symlinks(current)
                 dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
                 for name in dirs + sorted(files):
-                    child = Path(current) / name
+                    child = current / name
                     no_symlinks(child)
-                    rel = child.relative_to(root).as_posix()
-                    if child.is_dir():
-                        result[rel + "/"] = "DIRECTORY"
-                    elif child.is_file():
-                        result[rel] = file_hash(child)
-                    else:
-                        raise HarnessError(f"not a regular dependency: {rel}")
-        elif target.is_file():
-            result[target.relative_to(root).as_posix()] = file_hash(target)
-        else:
-            raise HarnessError(f"not a regular dependency: {dep}")
+                    if child.is_dir():remember(child,True)
+                    elif child.is_file():remember(child)
+                    else:raise HarnessError(f"not a regular dependency: {child}")
+        elif target.is_file():remember(target)
+        else:raise HarnessError(f"not a regular dependency: {dep}")
+    # Byte hashes remain authoritative; these stamps detect late mutations
+    # during this traversal, never a persistent mtime-only reuse policy.
+    for path,stamp in stamps.items():
+        no_symlinks(path)
+        if stat_identity(path.stat())!=stamp:
+            raise HarnessError(f"dependency changed during snapshot: {path}")
     return dict(sorted(result.items()))

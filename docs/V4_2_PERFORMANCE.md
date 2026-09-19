@@ -1,6 +1,6 @@
-# LunAstra 4.2.0 / batchflow.3
+> Current 4.3.0 batchflow.4 corrections supersede the historical limits below where noted: [native receipts, opaque V2 routing, full streaming scans and packaging](RELEASE_4.3.0.md). No live-host certification is implied.
 
-> Historical 4.2 performance design record. The promoted public release is LunAstra 4.3.0 batchflow.3.
+# LunAstra 4.2.0 / batchflow.3
 
 ## Scope and defaults
 

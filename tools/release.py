@@ -42,6 +42,8 @@ def validate_files(files):
             raise ValueError('binary/runtime extension refused: '+name)
         if len(raw)>2*1024*1024:
             raise ValueError('oversized source file: '+name)
+        if name.endswith('.cmd') and (b'\n' in raw.replace(b'\r\n',b'') or b'\r' in raw.replace(b'\r\n',b'')):
+            raise ValueError('launcher requires canonical CRLF: '+name)
         text=raw.decode('utf-8-sig')
         patterns = [
             r'-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----',
@@ -59,6 +61,15 @@ def validate_files(files):
     check_links(files)
 
 
+def distribution_bytes(name, raw):
+    """Canonical launchers even when GitHub source archives contain LF blobs."""
+    if name.endswith('.cmd'):
+        if b'\x00' in raw or b'\r' in raw.replace(b'\r\n',b''):
+            raise ValueError('invalid launcher line endings: '+name)
+        return raw.replace(b'\r\n',b'\n').replace(b'\n',b'\r\n')
+    return raw
+
+
 def collect(root=ROOT):
     root=Path(root).resolve(); files={}
     for p in sorted(root.rglob('*')):
@@ -69,7 +80,7 @@ def collect(root=ROOT):
         if not p.is_file(): continue
         if rel.as_posix()=='MANIFEST.sha256.json': continue
         if p.stat().st_size>2*1024*1024: raise ValueError('oversized source file: '+rel.as_posix())
-        files[rel.as_posix()]=p.read_bytes()
+        files[rel.as_posix()]=distribution_bytes(rel.as_posix(),p.read_bytes())
         if len(files)>10000 or sum(map(len,files.values()))>64*1024*1024:
             raise ValueError('source tree exceeds publication budget')
     validate_files(files)

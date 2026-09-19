@@ -6,27 +6,19 @@
 
 ## Current release
 
-**LunAstra 4.3.0 — batchflow.3**
+**LunAstra 4.3.0 — batchflow.4**
 
-4.3 keeps the fixed-seven contract — one root Luna plus the same six persistent Luna children — while removing orchestration work that did not improve the result.
+The same root and six persistent Luna children, with corrected native-acknowledgement recovery, encrypted-message routing, large-file certification and Windows archive line endings. Ordinary read/search hooks stay lightweight; correctness is not replaced by a timeout or cached file timestamp.
 
-- Native read/search and other unhandled tools no longer pay the full operational-hook path.
-- SQLite connections are reused within one synchronous control operation instead of being reopened repeatedly.
-- Recovery context is smaller; full notes and contracts remain recoverable when needed.
-- Active research queues wake from completed work instead of a fixed one-second delay after every wave.
-- File hashing checks the identity of the file actually opened, reducing stale/replaced-file races.
-- Luna-only model isolation, V1/V2 adapters, stale-blocker handling, safe report recovery, and the fixed six-child roster remain intact.
+[Correction details](docs/RELEASE_4.3.0.md) · [Full changelog](CHANGELOG.md) · [Development history](#development-history)
 
-[4.3 release notes](docs/RELEASE_4.3.0.md) · [Full changelog](CHANGELOG.md) · [4.2 performance notes](docs/V4_2_PERFORMANCE.md)
-
-> [!NOTE]
-> Software regression tests cover synthetic/native-shaped host events plus real local files, SQLite, subprocesses, packaging, installation and Git workflows. Live Windows Codex behavior, model quality, subscription usage and Astra-vs-LunAstra performance remain separate live-host measurements.
+Software regressions validate synthetic host events plus real local files, processes, SQLite and installation. Actual Desktop/IDE behavior and model speed, usage and quality remain separate measurements.
 
 ## A moon dreaming of the stars.
 
 **Keep Luna. Give it a team that plans, builds, challenges, and checks its work.**
 
-LunAstra 4.3.0 **batchflow.3 / fixed-seven** keeps one main Luna and six persistent Luna children. They form a plan, work on separate obligations, and review the assembled result. The same six native sessions are reused; finishing a phase is not an excuse to start another swarm.
+LunAstra 4.3.0 **batchflow.4 / fixed-seven** keeps one main Luna and six persistent Luna children. They form a plan, work on separate obligations, and review the assembled result. The same six native sessions are reused; finishing a phase is not an excuse to start another swarm.
 
 The ambition is to approach Astra Max-level task quality and efficiency with a light Luna configuration. That is a real-task evaluation target, **not a measured result of this release**. LunAstra does not call Astra, change model weights, select a heavier model, or quietly increase reasoning effort.
 
@@ -40,16 +32,12 @@ Seven sessions do not automatically produce seven times the insight. LunAstra ma
 
 ## What the 4.x line changed
 
-The 4.x line moved LunAstra from a fixed-seven prompt/workflow into a more explicit stateful orchestration layer while preserving the same quality-oriented roster.
+- **4.0 — stateflow:** preflight resources/workspace identity, staged requests, batched waits, source-bound blocker reassessment and persistent local research.
+- **4.1 — model scope:** one Luna/non-Luna classifier, turn/role-scoped lifetime, bounded diagnostics and clear unregister limits.
+- **4.2 — batchflow:** notification batches, shorter worker context, fewer redundant scans, explicit V1/V2 adapters and safer full-report/controller recovery.
+- **4.3 — control-path corrections:** lower hook/DB overhead, compact recovery, completed-work wakeups, authentic native receipt recovery, opaque-message routing, large-file streaming and portable launcher packaging.
 
-- **4.0 — stateflow:** preflight resources and workspace identity, canonical paths, staged large requests, batched waits, stale-blocker reassessment, reusable deterministic receipts, idempotent review/completion, and a persistent local research queue.
-- **4.1 — model scope:** one shared Luna/non-Luna classifier, turn/role-scoped protocol lifetime, inert unknown/non-Luna events, bounded diagnostics, and explicit warnings that unregistering cannot erase context already injected into an old conversation.
-- **4.2 — batchflow:** batched research notifications, cheaper queue/dependency lookup, fewer repeated scans, short-context worker assignments, explicit V1/V2 native adapters, compact report digests, safer controller recovery, and stricter complete-observation/report-read rules.
-- **4.3 — control-path cleanup:** fewer unnecessary hooks and DB opens, smaller recovery context, event-driven active-queue wakeups, tighter file identity checks, and safer reconciliation of synchronous edit leases.
-
-The design rule across all four releases is the same: **do not trade correctness or the fixed-seven review contract for a micro-optimization.** If host capacity, evidence, workspace coverage or a native acknowledgement is uncertain, LunAstra reports the uncertainty instead of manufacturing success.
-
-See [stateflow architecture](docs/V4_STATEFLOW.md), [model scope](docs/MODEL_SCOPE.md), [4.2 performance notes](docs/V4_2_PERFORMANCE.md), and [4.3 release notes](docs/RELEASE_4.3.0.md).
+Fixed seven means one root and the same six children, not permission to manufacture success when evidence is missing. See [stateflow](docs/V4_STATEFLOW.md), [model scope](docs/MODEL_SCOPE.md), [historical performance notes](docs/V4_2_PERFORMANCE.md) and [current correction notes](docs/RELEASE_4.3.0.md).
 
 ## How it works
 
@@ -164,28 +152,29 @@ Keep each distribution in its own folder. Version 4 uses separate `state-v4`; `s
 
 ## Development history
 
-The table below is the retained public development history, newest first. The full per-change record remains in [CHANGELOG.md](CHANGELOG.md).
+Retained history, newest first. Each maintenance build is distinct; detailed changes and limits remain in [CHANGELOG.md](CHANGELOG.md). 1.x/2.x are labeled undocumented rather than invented.
 
-| Release / build | What changed |
+| Release / build | Main changes |
 |---|---|
-| **4.3.0 — batchflow.3** | Removed unnecessary read/search operational hooks, reused SQLite connections inside synchronous controller work, reduced startup/recovery context, changed active research waits from fixed sleeps to completion-driven wakeups, tightened shell/output-scope routing, and strengthened opened-file identity/change checks. |
-| **4.2.0 — batchflow.2** | Corrected V2 task-name/capacity handling, refused incomplete workspace observations as COMPLETE, checked research inputs before compute, safely recovered positively dead controllers, required full current reports before issue/truncated-report decisions, and corrected current-version publishing instructions. |
-| **4.2.0 — batchflow.1** | Batched research notifications, indexed queue/dependency work, shared input fingerprints, removed duplicate prompt/read-only scans, introduced short-context fixed-seven assignments, added V1/V2 spawn/reuse/wait/identity adapters, compact report digests, and fresh-turn scope checks. |
-| **4.1.0 — model-scope.1** | Made new protocol injection explicitly Luna-only and activation/turn/role scoped; unified model classification; made unknown/non-Luna events inert; added bounded model-gate diagnostics and optional isolated-home helpers; clarified unregister/context-lifetime behavior. |
-| **4.0.0 — stateflow.1** | Introduced PREPARE resource roles and workspace validation, canonical path identity, owner-bound staged requests, crew-step and batched native waits, stale blocker reassessment, deterministic receipt/review reuse, a persistent verified research queue, and separate v3/v4 runtime state. |
-| **3.2.0 — fixed-seven-flow.1** | Fixed premature parent Stop behavior and worker-specific report recovery; bound waits to the current round/dispatch attempt; retained the same six native IDs through recovery. |
-| **3.2.0 — fixed-seven-stability.2** | Hardened merge-lock/path identity, symlink-root rejection, temporary-root normalization, Git newline/filter behavior, SQLite cleanup and distribution hygiene while preserving automatic fixed-seven activation. |
-| **3.2.0 — fixed-seven-publication.1** | Hardened inherited-filter behavior, snapshot/worker path normalization, zero-time indexing, child cleanup, Windows launcher/permission coverage, artwork checksums and hosted-CI publication gating. |
-| **3.2.0 — fixed-seven** | Established the current one-root + six-persistent-child contract, same-ID reuse through PLAN/EXECUTE/REVIEW, two non-implementing reviewers, source-linked final reports, snapshot-bound completion, scoped writes/worktrees, targeted repair and fixed-seven regression coverage. |
-| **3.2.0 — installation compatibility** | Removed an incorrect PATH-CLI version gate, separated host diagnostics from installation integrity, preserved prior installs on startup failure, improved current-payload hook observation, Windows Python selection and empty-home behavior. |
-| **3.2.0 — publication maintenance** | Added CLI diagnostics, explicit owned-data removal, deterministic source/install archives, credential/public-file checks, stricter release validation, pinned CI dependencies and publishing/security documentation. |
-| **3.2.0 — initial 2026-09-12 release** | Added bounded Luna worker planning, native child binding, isolated Git workspaces, verification records, long-check tracking, compaction recovery, pending-plan revision, bounded source reads and public evaluation tooling; also fixed early Codex hook/Windows/stale-evidence integration issues. |
-| **3.1.0** | Added a lightweight installed-hook prefilter for ordinary non-Luna events while retaining exact model validation in Python. |
-| **3.0.0** | Rebuilt the project around a Luna-led transactional work plan, bounded native delegation, worktree isolation, checked integration, verification records and source-only distribution. |
-| **2.x — legacy pre-public prototype line** | The current repository does not retain authoritative 2.x release notes or artifacts. Details are intentionally not reconstructed from memory or inference. |
-| **1.x — legacy pre-public prototype line** | The current repository does not retain authoritative 1.x release notes or artifacts. Details are intentionally not reconstructed from memory or inference. |
+| **4.3.0 batchflow.4** | Recover missing native PostToolUse acknowledgements from exact function-call/output pairs in a host-observed local transcript. Bind the call ID, original input hash, root session, turn when present, transcript identity and current ticket; assistant prose and generic error text cannot authorize another model. Expose root-only crew-reconcile and same-ticket crew-retry. Only the exact observed V1 pre-start capacity rejection can authorize a deliberate retry after its cause is addressed. Unknown/running calls and missing receipts remain protected; no timeout-based respawn. |
+| **4.3.0 batchflow.3** | Skip operational hooks for native read/search and other unhandled tools, both at matcher and early parsed-event boundaries. Model authorization remains unchanged. Share one thread-local SQLite connection per synchronous hook/controller operation, preserving transaction boundaries and nested rollback. Static schema setup no longer commits an outer transaction. |
+| **4.2.0 batchflow.2** | Correct V2 task-name grammar and require declared total capacity for the fixed roster, without changing Codex settings. Capacity includes the root; it is not a statement that all retained identities are simultaneously active. Reject incomplete before/after workspace observations for whole-change certification. Keep successful scoped test results as evidence, not falsely COMPLETE. |
+| **4.2.0 batchflow.1** | Batch local research notifications with persistent delivery cursors; old errors/revision-only changes do not repeatedly wake the model. Replace job-pair output conflict checks with a path trie and iterative dependency traversal; use indexed ready selection, SQL counts and bounded status receipts. |
+| **4.1.0 model-scope.1** | Scope every newly injected protocol to its observed Luna activation, turn and role; place the inactive-on-model-change/unregister rule before any crew obligation. Use one stdlib-only parsed-model gate before task imports and inside hooks. Non-Luna, missing, malformed and unknown models produce inert output. |
+| **4.0.0 stateflow.1** | Add preflight resource roles and expected workspace validation before native dispatch. Unify path identities used by output coverage, evidence and Stop guards. |
+| **3.2.0 fixed-seven-flow.1** | Repair premature parent Stop and worker-specific report recovery. Drive native waits and same-member recovery without replacing the six IDs. |
+| **3.2.0 fixed-seven-stability.2** | Preserve automatic Luna activation and one lead plus six persistent workers. Canonicalize merge-lock identity before acquiring a filesystem lock. |
+| **3.2.0 fixed-seven-publication.1** | Correct inactive inherited-filter handling without running active checkout filters. Normalize snapshot and worker alias paths; retain symlink and ownership guards. |
+| **3.2.0 fixed-seven** | Add a seven-session contract: one root and six persistent native Luna children, reused across plan, execution and final review. Require actual native identities and send acknowledgements; refuse replacement or nested workers. |
+| **3.2.0 installation compatibility** | Remove the PATH CLI version cutoff; CLI provenance is diagnostic, not active-host identity. Treat direct root feature settings as advisory because profiles and policy can differ. |
+| **3.2.0 publication maintenance** | Add CLI version diagnostics and stable-host startup-fallback regressions (the original version gate is removed by installation compatibility maintenance). Report unknown, old, preview and unreviewed hosts separately from installation success. |
+| **3.2.0 — 2026-09-12** | Bounded Luna worker planning with native child-agent binding and a six-worker concurrency ceiling. Isolated Git workspaces for implementation tasks, with checked patch integration and single-writer fallback. |
+| **3.1.0** | Added a lightweight installed-hook prefilter for ordinary non-Luna events. Retained exact model validation inside the Python helper. |
+| **3.0.0** | Rebuilt the project around a Luna-led transactional work plan, bounded native delegation, worktree isolation, checked integration, verification records, and source-only distribution. |
+| **2.x — legacy pre-public prototype line** | No authoritative detailed 2.x release notes/artifacts are retained in the current repository; earlier changes are not invented. |
+| **1.x — legacy pre-public prototype line** | No authoritative detailed 1.x release notes/artifacts are retained in the current repository; earlier changes are not invented. |
 
-For the detailed retained chronology, see [CHANGELOG.md](CHANGELOG.md). For release-specific design/limits, see [4.0](docs/RELEASE_4.0.0.md), [4.1](docs/RELEASE_4.1.0.md), [4.2](docs/RELEASE_4.2.0.md), [4.3](docs/RELEASE_4.3.0.md), and the historical [3.2 release notes](docs/RELEASE_3.2.0.md).
+Release-specific notes: [4.3](docs/RELEASE_4.3.0.md), [4.2](docs/RELEASE_4.2.0.md), [4.1](docs/RELEASE_4.1.0.md), [4.0](docs/RELEASE_4.0.0.md) and [3.2](docs/RELEASE_3.2.0.md).
 
 ## License
 

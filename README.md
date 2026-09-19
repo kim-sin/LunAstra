@@ -4,6 +4,25 @@
   <img src="docs/assets/lunastra-hero.webp" width="420" alt="LunAstra: a robot and a cat watching the moon together" />
 </p>
 
+## Version history
+
+**Latest: LunAstra 4.3.0 — batchflow.3**
+
+| Version | Main changes |
+|---|---|
+| **4.3.0 — batchflow.3** | Removes unnecessary read/search hook work, reuses SQLite connections inside one control operation, shortens recovery context, removes fixed 1-second active-queue waits, strengthens file-identity/change detection, and keeps the fixed seven-member roster unchanged. |
+| **4.2.0 — batchflow.2** | Fixes V2 task-name/capacity handling, incomplete workspace-scan certification, stale-input execution, dead research-controller recovery, required full-report reads, and release-version publishing instructions. |
+| **4.2.0 — batchflow.1** | Adds batched research notifications, cheaper dependency/output indexing, shared input fingerprints, fewer duplicate workspace scans, short-context fixed-seven assignments, V1/V2 native adapters, compact report digests, and stricter current-turn scope checks. |
+| **4.1.0 — model-scope.1** | Makes LunAstra activation explicitly Luna-only and turn/role scoped, centralizes model gating, keeps unknown/non-Luna models inert, adds bounded model-gate diagnostics, isolated-home helpers, and clearer unregister/context-lifetime rules. |
+| **4.0.0 — stateflow.1** | Rebuilds orchestration around preflight resource validation, canonical path identity, staged large requests, bounded reads, batched native waits, crew-step, stale-blocker reassessment, safe receipt/review reuse, persistent local research queues, and v3/v4 state separation. |
+| **3.2.0 — fixed-seven line** | Establishes one root + six persistent Luna children, same-ID reuse across planning/execution/review, two independent reviewers, source-linked reports, snapshot-bound completion, safer worktree integration, installation/compatibility hardening, and flow/stability/publication fixes. |
+| **3.1.0** | Adds the lightweight installed-hook prefilter for ordinary non-Luna events while retaining exact model validation in Python. |
+| **3.0.0** | Rebuilds the project around a Luna-led transactional work plan, bounded native delegation, worktree isolation, checked integration, verification records, and source-only distribution. |
+| **2.x** | Legacy pre-public prototype line. No authoritative 2.x release notes/artifacts are retained in the current repository, so details are not reconstructed. |
+| **1.x** | Legacy pre-public prototype line. No authoritative 1.x release notes/artifacts are retained in the current repository, so details are not reconstructed. |
+
+**Full chronological details:** [CHANGELOG.md](CHANGELOG.md) · **Current release notes:** [LunAstra 4.3.0](docs/RELEASE_4.3.0.md)
+
 
 ## 4.3: less orchestration overhead, same seven members
 

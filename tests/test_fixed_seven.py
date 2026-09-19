@@ -27,7 +27,8 @@ class Fixture:
         self.hooks.handle({**self.event,'hook_event_name':'UserPromptSubmit','prompt':'Write the sum of 2 and 3 to output.txt and validate it.'})
         self.owner=identity(self.event)[0];self.store=Store(self.state);self.crew=Crew(self.store,PACKAGE)
         self.contract={'goal':'Compute a checked sum','requirements':['output.txt contains the exact sum 5'],
-                       'evidence_paths':['input.txt'],'output_paths':['output.txt']}
+                       'evidence_paths':['input.txt'],'output_paths':['output.txt'],
+                       'native':{'protocol':'v1','context':'full'}}
         self.calls=[];self.keys={}
     def close(self):self.tmp.cleanup()
     def start(self):return self.crew.start(self.owner,self.contract)
@@ -130,6 +131,8 @@ class FixedSevenTests(unittest.TestCase):
         self.f.crew.post_dispatch(self.f.owner,'0',{'agent_id':'same'})
         with self.assertRaises(HarnessError):self.f.crew.post_dispatch(self.f.owner,'1',{'agent_id':'same'})
     def test_initial_forks_must_inherit_full_context(self):
+        # Explicit legacy/full mode remains enforced; 4.2 new default is capsule.
+        self.f.contract['native']={'protocol':'v1','context':'full'}
         self.f.start();c=self.f.crew.next(self.f.owner)['calls'][0]
         with self.assertRaises(HarnessError):self.f.crew.pre_dispatch(self.f.owner,'call',{**c['arguments'],'fork_context':False},'gpt-5.6-luna','spawn_agent')
     def test_worker_cannot_join_another_slot(self):

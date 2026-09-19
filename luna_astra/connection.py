@@ -13,6 +13,7 @@ import sqlite3
 import time
 
 from .transport import tool_name
+from .model_gate import accepts_event
 from .util import HarnessError, canonical, json_hash, no_symlinks, strict_json
 
 SCHEMA = '''CREATE TABLE IF NOT EXISTS hook_observations (
@@ -48,7 +49,7 @@ def observation_db(state: Path):
 def record_hook(state: Path, package: Path, event: dict, output: dict | None,
                 *, failed: bool = False) -> None:
     """Record no prompts, commands, file contents, tokens, or transcript paths."""
-    if not isinstance(event, dict) or event.get('hook_event_name') not in EVENTS:
+    if not accepts_event(event):
         return
     session, model, agent = event.get('session_id'), event.get('model'), event.get('agent_id')
     if not isinstance(session, str) or not 1 <= len(session) <= 4096:
@@ -180,4 +181,34 @@ def connection_status(state: Path, package: Path, *, since: float = 0.0) -> dict
         result.update(status='DIAGNOSTICS_UNREADABLE', sessions=[], session_count=0,
                       worker_sessions=0, kernel_sessions=0, tool_cycle_sessions=0,
                       error_sessions=0, last_observed_at=None)
+    return result
+
+
+def activation_layers(state: Path, package: Path, runtime: dict) -> dict:
+    """Read-only registration-independent layers; a stored phase is NOT liveness."""
+    result={'LUNA_EVENT_ACCEPTED':bool(runtime.get('session_count')),
+            'KERNEL_EMITTED':bool(runtime.get('kernel_sessions')),
+            'CREW_CONFIGURED_RECORDS':0,'CREW_ACTIVE_LAST_RECORDED':0,
+            'CREW_ACTIVE_CURRENT':'NOT_MEASURED','HOST_EFFECTIVE_CODEX_HOME':'UNKNOWN',
+            'ACTUAL_HOST_KIND':'UNKNOWN'}
+    path=Path(state)/'runtime.sqlite3';no_symlinks(path)
+    if not path.is_file():return result
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=0.1)) as db:
+            db.execute('PRAGMA query_only=ON')
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='kv'").fetchone():return result
+            rows=db.execute("SELECT m.value,c.value FROM kv m JOIN kv c ON m.scope=c.scope WHERE m.name='meta' AND c.name='fixed_seven' LIMIT 10001").fetchall()
+        if len(rows)>10000:raise ValueError('too many crew records')
+        from .model_gate import is_luna
+        for meta_raw,crew_raw in rows:
+            meta,crew=strict_json(meta_raw),strict_json(crew_raw)
+            if not isinstance(meta,dict) or not isinstance(crew,dict):raise ValueError('invalid crew observation')
+            if (meta.get('role')!='root' or not is_luna(meta.get('model'))
+                    or meta.get('kernel_release')!=str(Path(package).resolve())):continue
+            phase=crew.get('phase')
+            if phase not in {'PLAN','EXECUTE','REVIEW','COMPLETE'}:raise ValueError('invalid crew phase')
+            result['CREW_CONFIGURED_RECORDS']+=1
+            result['CREW_ACTIVE_LAST_RECORDED']+=phase!='COMPLETE'
+    except (OSError,ValueError,TypeError,sqlite3.Error):
+        result.update(CREW_CONFIGURED_RECORDS=None,CREW_ACTIVE_LAST_RECORDED=None,crew_state_error='UNREADABLE')
     return result

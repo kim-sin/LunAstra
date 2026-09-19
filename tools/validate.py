@@ -38,7 +38,7 @@ def fingerprint():
     for path in sorted(ROOT.rglob('*')):
         rel=path.relative_to(ROOT)
         if '__pycache__' in rel.parts or 'validation' in rel.parts or path.suffix=='.pyc' or not path.is_file():continue
-        if rel.parts[0] not in {'luna_astra','prompts','tests','evals','tools','docs','.github'} and path.name not in {'luna.py','install.py','INSTALL.cmd','CHECK.cmd','UNREGISTER.cmd','PURGE.cmd','README.md','SECURITY.md','CONTRIBUTING.md','LICENSE','CHANGELOG.md','requirements-dev.txt','.gitignore','.gitattributes'}:continue
+        if rel.parts[0] not in {'luna_astra','prompts','tests','evals','tools','docs','.github'} and path.name not in {'CHECK_MODEL_GATE.cmd','MODEL_GATE_REPORT.cmd','STOP_MODEL_GATE.cmd','INSTALL_LUNA_HOME.cmd','CHECK_LUNA_HOME.cmd','UNREGISTER_LUNA_HOME.cmd','luna.py','install.py','INSTALL.cmd','CHECK.cmd','UNREGISTER.cmd','PURGE.cmd','README.md','SECURITY.md','CONTRIBUTING.md','LICENSE','CHANGELOG.md','requirements-dev.txt','.gitignore','.gitattributes'}:continue
         files[rel.as_posix()]=hashlib.sha256(path.read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(files,sort_keys=True).encode()).hexdigest()
 

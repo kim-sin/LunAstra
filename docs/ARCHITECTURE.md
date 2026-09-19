@@ -1,3 +1,7 @@
+> 4.2 update: current short-context, batch-wait and V1/V2 behavior is specified in [V4_2_PERFORMANCE.md](V4_2_PERFORMANCE.md). Older full-history/V1-only descriptions below apply to preserved legacy mode, not new capsule runs. Actual host verification remains separate.
+
+> Current version: 4.3.0. The original components below remain; [stateflow architecture](V4_STATEFLOW.md) describes the new control, resource, blocker and research paths.
+
 # Architecture
 
 ## Fixed-seven build

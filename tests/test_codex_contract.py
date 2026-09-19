@@ -173,12 +173,17 @@ class NativeContractTests(unittest.TestCase):
     def test_same_version_old_kernel_is_refreshed(self):
         meta=self.store.get(self.owner,'meta');meta.pop('kernel_build',None);self.store.put(self.owner,'meta',meta)
         output=self.hooks.handle({**self.root,'hook_event_name':'PreToolUse','tool_use_id':'inspect','tool_name':'read_file','tool_input':{}})
+        self.assertEqual({},output)  # Read-only tools intentionally do not load task storage.
+        self.assertNotIn('kernel_build',self.store.get(self.owner,'meta'))
+        output=self.hooks.handle({**self.root,'hook_event_name':'SessionStart','source':'resume'})
         self.assertIn(__build__,output['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(__build__,self.store.get(self.owner,'meta')['kernel_build'])
 
-    def test_reserve_slug_is_recognized_without_switch(self):
-        self.assertTrue(is_luna('gpt-reserve'))
+    def test_ambiguous_reserve_is_inert_without_switch(self):
+        # 4.1 deliberately withdraws unproven bare-reserve authorization.
+        self.assertFalse(is_luna('gpt-reserve'))
         output=self.hooks.handle({**self.root,'session_id':'reserve','model':'gpt-reserve'})
-        self.assertIn('engineering kernel',output['hookSpecificOutput']['additionalContext'])
+        self.assertEqual({},output)
 
     def test_unrelated_models_still_do_not_create_state(self):
         h=Hooks(ROOT,self.base/'untouched')
@@ -321,6 +326,6 @@ class WindowsArgumentBoundaryTests(unittest.TestCase):
 
     def test_windows_wrapper_has_explicit_command_budget(self):
         prefix=['python','luna.py','--state','state','--session','key']
-        command=helper_command(prefix+['--input-json',json.dumps({'text':'x'*20000}),'note'],windows=True)
+        command=helper_command(prefix+['read','x'*20000],windows=True)
         with self.assertRaisesRegex(HarnessError,'safe command limit'):
             worker_shell_input(command,prefix,joined=True,windows=True)

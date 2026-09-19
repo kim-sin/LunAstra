@@ -34,7 +34,8 @@ class InstalledFixedSevenTests(unittest.TestCase):
         self.prefix=self.get_prefix(result)
         self.hook({**self.event,'hook_event_name':'UserPromptSubmit','prompt':'Repair add without changing its interface and write a checked report.'})
         self.contract={'goal':'Repair signed addition and deliver a checked report','requirements':['Signed addition is correct','report.txt contains checked result'],
-                       'evidence_paths':['app.py','test_app.py'],'output_paths':['app.py','report.txt']}
+                       'evidence_paths':['app.py','test_app.py'],'output_paths':['app.py','report.txt'],
+                       'native':{'protocol':'v1','context':'full'}}
         self.children={};self.native=[]
     def git(self,*args):
         return subprocess.run(['git','-C',str(self.ws),*args],check=True,capture_output=True,text=True)

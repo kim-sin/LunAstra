@@ -1,4 +1,16 @@
+> 4.2 update: current short-context, batch-wait and V1/V2 behavior is specified in [V4_2_PERFORMANCE.md](V4_2_PERFORMANCE.md). Older full-history/V1-only descriptions below apply to preserved legacy mode, not new capsule runs. Actual host verification remains separate.
+
 # First-use check
+
+
+## 4.1 model-scope lifecycle
+
+See [MODEL_SCOPE.md](MODEL_SCOPE.md) for the exact gate policy, bounded diagnostic commands and the separate live acceptance matrix. Hook registration is not activation; an emitted kernel is not proof of Desktop consumption or currently running workers.
+
+Unregister disables future **owned** hook injections in the selected home only. Already injected conversation context is **NOT RETRACTED**. Model switching may retain old text, especially from pre-4.1 builds. Use a new conversation for clean non-Luna work; do not delete state or terminate workers to fix context. Re-registering does not erase history. Existing v3/v4 records and unrelated hooks are preserved.
+
+Bare `gpt-reserve` is UNKNOWN/fail-closed pending a proven Luna discriminator. Do not infer the selected model from prompt words, a UI label or a PATH CLI version. The optional `--isolated` home is a targeted installation, **not live-verified Desktop/IDE routing**. Check additional project/managed hook sources separately; changing a home cannot prove that every other injection source is absent.
+
 
 Use a disposable project in the Codex app or CLI you actually use. Do not update an unrelated CLI just because the installer reports its version.
 

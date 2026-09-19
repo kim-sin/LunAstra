@@ -39,25 +39,31 @@ class JobsTests(unittest.TestCase):
         self.assertFalse(self.jobs.active(),self.jobs.all());return self.jobs.all()[0]
     def helper(self,args,data=None):
         return subprocess.run([sys.executable,str(ROOT/'luna.py'),'--state',str(self.state),'--session',self.key,*args],input=json.dumps(data) if data else None,text=True,capture_output=True,timeout=15)
+    def hold_check(self):
+        # Synchronize the pending state; elapsed sleeps can finish before a slow CLI starts.
+        release=self.base/'release-check'
+        (self.ws/'check.py').write_text("from pathlib import Path\nimport time\np=Path("+repr(str(release))+")\nend=time.monotonic()+30\nwhile not p.exists():\n if time.monotonic()>end: raise RuntimeError('fixture release missing')\n time.sleep(.01)\nimport app\nassert app.answer==2\n")
+        return release
     def test_actual_async_check_completes_with_evidence(self):
         job=self.jobs.start('check');self.assertIn(job['status'],{'PENDING','RUNNING','FINISHED'})
         finished=self.wait();self.assertEqual(finished['status'],'FINISHED');self.assertTrue(self.ev.status()['passed'])
     def test_failed_async_check_is_not_pass(self):
         (self.ws/'app.py').write_text('answer=9\n');self.jobs.start('check');self.wait();self.assertFalse(self.ev.status()['passed'])
     def test_duplicate_outstanding_check_reuses_controller(self):
-        (self.ws/'check.py').write_text('import time\ntime.sleep(.5)\n')
-        a=self.jobs.start('check');b=self.jobs.start('check');self.assertEqual(a['id'],b['id']);self.wait()
+        release=self.hold_check()
+        try:
+            a=self.jobs.start('check');b=self.jobs.start('check');self.assertEqual(a['id'],b['id'])
+        finally:release.touch();self.wait()
     def test_pending_controller_blocks_early_finish(self):
-        (self.ws/'check.py').write_text('import time\ntime.sleep(.5)\n')
-        self.jobs.start('check')
+        release=self.hold_check();self.jobs.start('check')
         try:
             r=self.helper(['finish'],{'kind':'tested','summary':'done','review':'review','limitations':'local'})
             self.assertNotEqual(r.returncode,0)
-        finally:self.wait()
+        finally:release.touch();self.wait()
     def test_outstanding_check_blocks_new_assignment(self):
-        (self.ws/'check.py').write_text('import time\ntime.sleep(.5)\n');self.jobs.start('check')
+        release=self.hold_check();self.jobs.start('check')
         try:self.assertNotEqual(self.helper(['begin'],{**self.task,'task_id':'new'}).returncode,0)
-        finally:self.wait()
+        finally:release.touch();self.wait()
     def test_invalid_check_cannot_launch(self):
         with self.assertRaises(HarnessError):self.jobs.start('missing')
         self.assertEqual(self.jobs.all(),[])

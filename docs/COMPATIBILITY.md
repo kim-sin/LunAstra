@@ -1,12 +1,22 @@
 # Codex compatibility
 
-LunAstra 3.2.0 is tested against the public Codex hook and multi-agent interfaces. Compatibility tests pin exact upstream schema bytes so changes in Codex can be reviewed explicitly instead of being silently accepted.
+
+## 4.1 model-scope lifecycle
+
+See [MODEL_SCOPE.md](MODEL_SCOPE.md) for the exact gate policy, bounded diagnostic commands and the separate live acceptance matrix. Hook registration is not activation; an emitted kernel is not proof of Desktop consumption or currently running workers.
+
+Unregister disables future **owned** hook injections in the selected home only. Already injected conversation context is **NOT RETRACTED**. Model switching may retain old text, especially from pre-4.1 builds. Use a new conversation for clean non-Luna work; do not delete state or terminate workers to fix context. Re-registering does not erase history. Existing v3/v4 records and unrelated hooks are preserved.
+
+Bare `gpt-reserve` is UNKNOWN/fail-closed pending a proven Luna discriminator. Do not infer the selected model from prompt words, a UI label or a PATH CLI version. The optional `--isolated` home is a targeted installation, **not live-verified Desktop/IDE routing**. Check additional project/managed hook sources separately; changing a home cannot prove that every other injection source is absent.
+
+
+LunAstra 4.3.0 retains the public Codex hook and multi-agent contract fixtures used by 3.2.0. Local fixture tests are not live host certification. Compatibility tests pin exact upstream schema bytes so changes in Codex can be reviewed explicitly instead of being silently accepted.
 
 ## Fixed-seven native requirements
 
-This build requires six native child sessions in addition to the primary session, actual spawn IDs, and reusable `send_input` calls. The public V1 `send_input` input uses `target` (not `id`) and returns a `submission_id`; that acknowledgement must precede joining a new assignment. Unknown responses stay pending/unknown and do not trigger replacement spawns. Native `resume_agent` may only target an already-bound member.
+This build requires six native child sessions plus the primary session and actual current acknowledgements. V2 additionally requires `native.capacity_total` of at least 7, taken from the actual host limit and including the root; missing capacity remains unconfirmed. No host configuration is changed. V1 uses observed agent IDs, send_input and target-specific waits. V2 uses canonical spawn names, followup_task with a successful empty reply, mailbox-only waits and list_agents. Runtime worker IDs require actual hook observations; canonical names are never treated as UUIDs. See [4.2 exact adapters and limits](V4_2_PERFORMANCE.md).
 
-The current documented `agents.max_concurrent_threads_per_session` capacity excludes the primary session. Runtime settings, account policy and availability can still differ. LunAstra does not edit that configuration; native capacity failure is reported rather than masked. Full-history forks are requested without a model or reasoning override. This does not override native `agents.default_subagent_model` or `agents.default_subagent_reasoning_effort`: the native spawn implementation applies those defaults even for a full-history fork. Review them before first use and before measuring a light-Luna run. The extension checks observed model identity but cannot certify effective effort from a hook schema that does not expose it. Existing root sessions keep their earlier mode; use a new conversation for fixed seven.
+Choose the protocol from tools actually exposed by the host. New runs default to short-context capsules, then crew-join returns the complete assignment. The first of the SAME six must have an actual Luna hook and join before the other five; no seventh probe or setting override occurs. Explicit full-context compatibility mode is available; saved unprofiled crews retain it. Native defaults may affect child model/effort with either history mode. The hook schema does not independently prove effective reasoning effort. Unknown identity remains blocked without replacement.
 
 Additional primary references reviewed for the reusable-agent interface:
 
@@ -24,7 +34,7 @@ Installation is based on local prerequisites and file safety, not a Codex versio
 
 Before changing hook definitions, the installer runs the copied helper's `help` command with the selected Python interpreter. This local startup check makes no model calls. It verifies the installed helper can import and report its identity; it does not test Codex or bypass hook trust.
 
-Codex must deliver the lifecycle events used by the extension. Delegation also requires its native Luna V1 agent tools. Keep normal host approval controls enabled. A successful file installation does not prove those features are active. After reviewing `/hooks`, use a new Luna session and consult [SMOKE_TEST.md](SMOKE_TEST.md).
+Codex must deliver the lifecycle events used by the extension. Delegation also requires the selected native V1 or V2 tool contract and observable worker identity. Keep normal host approval controls enabled. A successful file installation does not prove those features are active. After reviewing `/hooks`, use a new Luna session and consult [SMOKE_TEST.md](SMOKE_TEST.md).
 
 Codex 0.154.0 is an offline reference, not a minimum-version guarantee. Its child-session startup differs from newer revisions when a worker inherits history. The regression suite replays a child `UserPromptSubmit` or `PreToolUse` carrying `agent_id`, followed by the observed parent spawn result. A missing start event is not replaced with a guessed parent identity. Passing those synthetic cases is not a claim that every older host supports this contract.
 
@@ -54,7 +64,7 @@ For a scripted first-use check, `doctor --require-observed --since UNIX_TIMESTAM
 
 ## Upstream reference
 
-The current compatibility review is pinned to `openai/codex` commit `4d205c7a4dc36b719679a0356a45b23133732265`.
+The preserved pre-4.2 compatibility fixtures are pinned to `openai/codex` commit `4d205c7a4dc36b719679a0356a45b23133732265`.
 
 Pinned contract files:
 
@@ -84,3 +94,8 @@ When Codex changes relevant hook or multi-agent code:
 3. Update the source revision and blob hashes in `tests/codex_contract/NOTICE.md`.
 4. Add a regression for any behavior change.
 5. Run the complete local suite and hosted CI before publishing a new LunAstra release.
+
+
+## 4.0 migration boundary
+
+Version 4 has a separate runtime store and changed preparation/control semantics. It retains legacy protocol helpers for testing/history, but does not copy active 3.x native IDs into a new state store. Finish old work first. Automatic request staging relies on supported PreToolUse updatedInput. Batch wait accepts observed IDs; a host returning only ambiguous native paths triggers safe singleton fallback, not guessed identity mapping.

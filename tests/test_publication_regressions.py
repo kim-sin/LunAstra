@@ -82,7 +82,7 @@ class PublicationRegressions(unittest.TestCase):
         tree=self.base/'assigned';tree.mkdir();(tree/'sub').mkdir()
         meta=store.get(key,'meta');meta['assigned_workspace']=str(tree/'sub'/'..');store.put(key,'meta',meta)
         hooks.handle({**event,'session_id':'child','cwd':str(tree),'hook_event_name':'PostToolUse',
-                      'tool_use_id':'u','tool_name':'read_file','tool_response':{'exit_code':0}})
+                      'tool_use_id':'u','tool_name':'Bash','tool_input':{'command':'echo fixture'},'tool_response':{'exit_code':0}})
         self.assertEqual(store.get(key,'meta')['last_event'],'PostToolUse')
         self.assertEqual(len(hooks.doctor()['sessions']),1)
 

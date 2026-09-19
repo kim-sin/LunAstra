@@ -61,6 +61,36 @@ class Coordinator:
             if token is None: db.execute('DELETE FROM leases WHERE workspace=? AND owner=?',(self.workspace,owner))
             else: db.execute('DELETE FROM leases WHERE workspace=? AND owner=? AND token=?',(self.workspace,owner,token))
 
+    def release_finished_edits(self, owner):
+        """Stop is after synchronous structured edits, unlike another Pre event.
+
+        Release only matching own transient edit leases. Missing Post is UNKNOWN,
+        never PASS. Native dispatch, manual/job leases and an explicitly running
+        tool are preserved. No age/timeout or next-call heuristic is used.
+        """
+        from .util import strict_json
+        from .hook_policy import EDIT
+        released=[]
+        with self.store.db(True) as db:
+            rows=db.execute("SELECT DISTINCT token FROM leases WHERE workspace=? AND owner=? AND token LIKE 'tool:%'",
+                            (self.workspace,owner)).fetchall()
+            for row in rows:
+                token=row['token'];uid=token[5:]
+                before=db.execute("SELECT data FROM events WHERE scope=? AND unique_id=? AND kind='tool_start'",
+                                  (owner,'pre:'+uid)).fetchone()
+                after=db.execute("SELECT data FROM events WHERE scope=? AND unique_id=? AND kind='tool_result'",
+                                 (owner,'post:'+uid)).fetchone()
+                if not before:continue
+                detail=strict_json(before[0])
+                if tool_name(detail.get('tool','')) not in EDIT or not detail.get('edit_paths'):continue
+                if after and strict_json(after[0]).get('outcome')=='RUNNING':continue
+                db.execute('DELETE FROM leases WHERE workspace=? AND owner=? AND token=?',
+                           (self.workspace,owner,token))
+                released.append(uid)
+        for uid in released:
+            self.store.event(owner,'edit-stop:'+uid,'edit_reconciled',{'tool_use_id':uid,'outcome':'UNKNOWN','reason':'synchronous edit returned before Stop; no success inferred'})
+        return released
+
     def status(self):
         with self.store.db() as db:
             return [dict(r) for r in db.execute('SELECT path,owner,token,at FROM leases WHERE workspace=? ORDER BY path',(self.workspace,))]

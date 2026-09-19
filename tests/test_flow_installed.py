@@ -20,7 +20,7 @@ class InstalledFlowTests(unittest.TestCase):
     def test_installed_helper_and_active_stop_keep_parent_turn_open(self):
         result=self.host.cli(['crew-drive'])
         self.assertEqual('WAIT',result['action'])
-        self.assertEqual(['native-child-1'],result['native_call']['arguments']['targets'])
+        self.assertEqual(['native-child-'+str(i) for i in range(1,7)],result['native_call']['arguments']['targets'])
         stopped=self.host.hook({**self.host.event,'hook_event_name':'Stop',
              'last_assistant_message':'Not done; the six children are running.','stop_hook_active':True})
         self.assertEqual('block',stopped.get('decision'),stopped)

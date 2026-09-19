@@ -11,12 +11,12 @@ import sys
 import zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-TOP={'README.md','LICENSE','SECURITY.md','CONTRIBUTING.md','CHANGELOG.md','install.py','luna.py','INSTALL.cmd','CHECK.cmd','UNREGISTER.cmd','PURGE.cmd','.gitignore','.gitattributes','requirements-dev.txt'}
+TOP={'CHECK_MODEL_GATE.cmd','MODEL_GATE_REPORT.cmd','STOP_MODEL_GATE.cmd','INSTALL_LUNA_HOME.cmd','CHECK_LUNA_HOME.cmd','UNREGISTER_LUNA_HOME.cmd','README.md','LICENSE','SECURITY.md','CONTRIBUTING.md','CHANGELOG.md','install.py','luna.py','INSTALL.cmd','CHECK.cmd','UNREGISTER.cmd','PURGE.cmd','.gitignore','.gitattributes','requirements-dev.txt'}
 DIRS={'luna_astra','prompts','tests','evals','tools','docs','.github'}
 EXT={'.py','.md','.json','.yml','.yaml','.toml','.txt','.cmd'}
 # Only the reviewed artwork bytes are allowed; this is not a general binary allowance.
 ASSET_HASHES={'docs/assets/lunastra-hero.webp':'8e9167d308257ee5a4841c2860d025ab17b4a57024e16e99dba1f77f545ef2fd'}
-FORBIDDEN={'state','state-v2','state-v3','worktrees','backups','checkpoints','.codex','.omx','.lunastra','.env'}
+FORBIDDEN={'model-gate-trace','state','state-v2','state-v3','worktrees','backups','checkpoints','.codex','.omx','.lunastra','.env'}
 
 def validate_files(files):
     """Apply the same publication boundary on build AND archive verification."""

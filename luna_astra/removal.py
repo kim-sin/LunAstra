@@ -13,7 +13,7 @@ from .install import Installer, OWNER, install_lock, read_hooks, strip_owned, de
 from .util import HarnessError, canonical, digest, load_json, no_symlinks, strict_json, write_json
 
 CONFIRMATION = 'DELETE-LUNASTRA-DATA'
-_ALLOWED = {'releases', 'backups', 'installation.json', 'install.lock'}
+_ALLOWED = {'releases', 'backups', 'installation.json', 'install.lock', 'model-gate-trace'}
 
 
 def _readonly_database(path: Path):
@@ -49,6 +49,13 @@ def _active_records(app: Path) -> list[str]:
                     blockers.append('unresolved native worker dispatch')
                 if 'attempts' in tables and db.execute("SELECT 1 FROM attempts WHERE status='RUNNING' LIMIT 1").fetchone():
                     blockers.append('an unfinished verification attempt')
+                if 'research_studies' in tables:
+                    for raw, in db.execute('SELECT spec FROM research_studies'):
+                        research=strict_json(raw)
+                        if research.get('state') not in {'PAUSED','FINISHED'}:
+                            blockers.append('an active or unknown research controller')
+                if 'research_jobs' in tables and db.execute("SELECT 1 FROM research_jobs WHERE state='RUNNING' LIMIT 1").fetchone():
+                    blockers.append('an unfinished research subprocess')
                 if 'kv' in tables:
                     for name, raw in db.execute("SELECT name,value FROM kv WHERE name LIKE 'job:%'"):
                         from .jobs import job_record
@@ -108,13 +115,15 @@ def purge_plan(installer: Installer, *, include_workspaces: bool = False) -> dic
                     raise HarnessError('Modified or unowned LunAstra hooks remain. Resolve them before deleting their code.')
     workspaces = sum(1 for name in inventory if '/worktrees/' in '/' + name and name.endswith('/tree'))
     blockers = _active_records(app)
+    if (app/'model-gate-trace'/'active.json').exists() or (app/'model-gate-trace'/'control.lock').exists():
+        blockers.append('model-gate diagnostic marker/operation present; stop diagnostics before explicit data removal')
     if workspaces and not include_workspaces:
         blockers.append('worktree copies exist; export needed changes and explicitly include workspaces')
     return {'exists': True, 'target': str(app), 'files': sum(v[3] == stat.S_IFREG for v in inventory.values()),
             'bytes': sum(v[0] for v in inventory.values() if v[3] == stat.S_IFREG),
             'inventory_sha256': digest(canonical(inventory).encode()), 'workspaces': workspaces,
             'blockers': blockers, 'external_projects_deleted': False,
-            'warning': 'Runtime notes, test logs, hook backups, installed releases and explicitly included worktree copies will be deleted. Project Git worktree registrations are not modified.'}
+            'warning': 'Model-gate diagnostic captures, runtime notes, test logs, hook backups, installed releases and explicitly included worktree copies will be deleted. Project Git worktree registrations are not modified.'}
 
 
 def purge(installer: Installer, *, confirm: str = '', confirm_idle: bool = False,

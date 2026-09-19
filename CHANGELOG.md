@@ -1,5 +1,66 @@
 # Changelog
 
+## 4.3.0 batchflow.3
+
+- Skip operational hooks for native read/search and other unhandled tools, both at matcher and early parsed-event boundaries. Model authorization remains unchanged.
+- Share one thread-local SQLite connection per synchronous hook/controller operation, preserving transaction boundaries and nested rollback. Static schema setup no longer commits an outer transaction.
+- Reconcile only the current session's recorded synchronous edit leases at Stop; missing Post is UNKNOWN, never PASS. Native calls without acknowledgements remain protected from duplicate spawning.
+- Compact fixed-seven startup instructions and restore only a bounded, scoped recovery kernel plus saved member/phase pointers. Full notes/contracts remain available through context --recover without an unnecessary code-map scan. Legacy roles keep their original protocol.
+- Require fixed-crew root shell work to use its own helper for registered checks/research. Structured edit tools enforce output scope. Apply the same worker shell restriction to direct-function aliases. Native host filesystem permissions remain essential; registered argv is not sandboxed by this project.
+- Active local queue jobs wake the scheduler on completed futures instead of sleeping for one second after every wave. Idle queues retain bounded low-frequency polling; model-facing batch wake policy is unchanged.
+- Hash readers check the opened file identity and change metadata, including pathname replacement and same-size/restored-mtime races on platforms exposing change time.
+- No new CMD, model agent, service, runtime dependency, account-setting write, or destructive migration.
+
+Limits: no live Windows/Desktop model run was performed as part of these local software changes. A missing native spawn acknowledgement is not safely inferable from a timeout; no automatic replacement is claimed. Whole-workspace scan budgets and explicit incomplete-coverage rejection remain. Unknown/MCP tools and registered shell programs are subject to host controls, not an OS sandbox implemented by hooks.
+
+## 4.2.0 batchflow.2
+
+- Correct V2 task-name grammar and require declared total capacity for the fixed roster, without changing Codex settings. Capacity includes the root; it is not a statement that all retained identities are simultaneously active.
+- Reject incomplete before/after workspace observations for whole-change certification. Keep successful scoped test results as evidence, not falsely COMPLETE.
+- Compare enqueue-time input/executable/environment bytes before starting a compute process; retain post-execution/verifier checks.
+- Safely recover positively exited research controllers. Preserve live/unknown processes, interrupted results and pending jobs; never replay an interrupted job automatically.
+- Require exact current full-report retrieval before issue/truncated-report decisions. Bound collective retrieval, invalidate receipts on report changes, and expose READ_REPORTS as the next action.
+- Correct current-version publishing instructions. Existing fixed-seven, model isolation, batch notifications, protected data and host permission contracts remain.
+
+## 4.2.0 batchflow.1
+
+- Batch local research notifications with persistent delivery cursors; old errors/revision-only changes do not repeatedly wake the model.
+- Replace job-pair output conflict checks with a path trie and iterative dependency traversal; use indexed ready selection, SQL counts and bounded status receipts.
+- Share one byte-backed input fingerprint per identical enqueue input set; retain post-compute/verify/ingest actual-byte checks.
+- Remove per-prompt and read-only-crew duplicate workspace scans and automatic maps; retain root final observation and writer baselines.
+- New fixed-seven runs use short-context assignments with first-member actual-model handshake; legacy crews retain full context.
+- Add V1/V2 spawn/reuse/wait/status/identity adapters and stale observation protection without fabricated runtime IDs.
+- Return compact finding digests with explicit full-read paths; preserve all source-linked reports and semantic review.
+- Require a fresh trusted current-turn scope in conditional prompt lifetime text.
+- See docs/V4_2_PERFORMANCE.md for limits and migration; software tests do not certify live model speed or quality.
+
+## 4.1.0 model-scope.1
+
+- Scope every newly injected protocol to its observed Luna activation, turn and role; place the inactive-on-model-change/unregister rule before any crew obligation.
+- Use one stdlib-only parsed-model gate before task imports and inside hooks. Non-Luna, missing, malformed and unknown models produce inert output.
+- Treat bare `gpt-reserve` as UNKNOWN: the current evidence does not prove a Luna-only host discriminator. Explicit `gpt-<version>-luna...` variants remain supported. This supersedes older Reserve-admission entries below.
+- Provide explicitly armed, time/count-bounded model-gate traces with per-capture hashed session identities and no prompt, command, file-content or credential capture.
+- Distinguish owned hook registration, accepted events, emitted kernel and last-recorded crew state from actual host/model compliance.
+- Expose an optional isolated installation target; do not launch/reroute Desktop/IDE or copy account/config files.
+- Warn that unregister disables future owned injections but cannot retract old conversation context. Preserve v3/v4 state, unrelated hooks, releases, jobs and all fixed-seven/stateflow behavior.
+- Add model/no-op/lifetime/diagnostic/installer lifecycle regressions. Actual Desktop/IDE switching remains a separate manual acceptance, not a claim from synthetic tests.
+
+## 4.0.0 stateflow.1
+
+- Add preflight resource roles and expected workspace validation before native dispatch.
+- Unify path identities used by output coverage, evidence and Stop guards.
+- Stage large literal JSON automatically as owner-bound content-addressed blobs.
+- Add bounded streaming line/byte reads and distinct source diagnostics.
+- Batch native waits with safe singleton fallback on ambiguous host identity.
+- Add crew-step with current reports and legal state routing, without semantic auto-approval.
+- Reassess dependency-stale blocked reports through the same completed native member and ticket.
+- Separate blocker domains and preserve old report history; stale is not success.
+- Reuse opt-in deterministic execution receipts only under unchanged semantic/source/environment identity.
+- Reuse matching final review/completion; catch uncovered changed paths before certification.
+- Add explicit persistent local research queue, verifier records, pause/drain and checkpoint resumption.
+- Preserve 3.x state and refuse upgrades/removal while recorded work is unresolved.
+- Add stateflow/security/local subprocess regressions and documented live-host limitations.
+
 ## 3.2.0 fixed-seven-flow.1
 
 - Repair premature parent Stop and worker-specific report recovery.
@@ -98,3 +159,13 @@
 ## 3.0.0
 
 - Rebuilt the project around a Luna-led transactional work plan, bounded native delegation, worktree isolation, checked integration, verification records, and source-only distribution.
+
+## 2.x — legacy pre-public prototype era
+
+- The current repository does not preserve authoritative 2.x release notes or artifacts.
+- LunAstra 3.0.0 is the first retained architectural rebuild in the public changelog; earlier details are intentionally not reconstructed from memory or inference.
+
+## 1.x — legacy pre-public prototype era
+
+- The current repository does not preserve authoritative 1.x release notes or artifacts.
+- This section exists so the history runs from the earliest named major line to the current release without inventing undocumented changes.

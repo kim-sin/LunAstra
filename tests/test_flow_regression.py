@@ -18,7 +18,7 @@ class PrematureReturnRegression(unittest.TestCase):
         self.assertEqual([],result['calls'])
         self.assertEqual('WAIT',result.get('flow',{}).get('action'),result)
         self.assertEqual('wait_agent',result['flow']['native_call']['tool'])
-        self.assertEqual(['child-1'],result['flow']['native_call']['arguments']['targets'])
+        self.assertEqual([f'child-{i}' for i in range(1,7)],result['flow']['native_call']['arguments']['targets'])
     def test_worker_correction_is_worker_specific_not_parent_coordination(self):
         self.f.start(); self.f.dispatch()
         result=self.f.hooks.handle({**self.f.event,'session_id':'child-1','agent_id':'child-1',

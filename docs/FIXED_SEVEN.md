@@ -1,6 +1,8 @@
+> 4.2 update: current short-context, batch-wait and V1/V2 behavior is specified in [V4_2_PERFORMANCE.md](V4_2_PERFORMANCE.md). Older full-history/V1-only descriptions below apply to preserved legacy mode, not new capsule runs. Actual host verification remains separate.
+
 # Fixed-seven protocol
 
-This document describes the **fixed-seven** maintenance build of LunAstra **3.2.0**. It supersedes earlier dynamic 0-6 allocation for newly observed root sessions only. The original dynamic implementation remains for pre-upgrade sessions and migration tests.
+This document describes the **fixed-seven** contract retained in LunAstra **4.3.0**. It supersedes earlier dynamic 0-6 allocation for newly observed root sessions only. The original dynamic implementation remains for pre-upgrade sessions and migration tests.
 
 ## Contract and identity
 
@@ -71,7 +73,7 @@ This is a schema example, not a completed real check. Valid verdicts are `clear`
 
 ### Bounded JSON on Windows
 
-Use `--input-json` **before** the subcommand for concise literal JSON. For a large form, stage JSON with `input-append NAME --offset N --chunk TEXT`, then pass `--input-ref NAME` before the command. Offsets count characters. Chunks are 1-1000 characters; each complete buffer is at most 2 MiB. Matching repeated chunks are reused, conflicting offsets are rejected. Use a new short lowercase buffer name for a changed form. Buffers are scoped to the actual local session and never evaluated as code.
+Use `--input-json` **before** the subcommand for literal JSON. Version 4 stages a long argument automatically in an owner-bound sha256 blob and rewrites only the transport. Do not make the model split it. `input-append` remains a compatibility fallback (1-1000 characters per chunk, 2 MiB total) for explicit older clients, not the preferred new flow. No content is evaluated as shell text.
 
 ## Recovery and revisions
 
@@ -92,3 +94,6 @@ Model concurrency, reasoning effort, model availability and usage accounting bel
 ## Evidence scope
 
 The bundled tests simulate native model-event payloads while executing real local helper processes, Git operations, file writes, checks and installer flows. They establish the exercised software properties. Live seven-session operation, light-Luna quality, throughput, usage savings and Astra Max parity require [separate real-task evaluation](../evals/PROTOCOL.md). No model quality claim is generated from synthetic tests.
+
+
+Version 4 adds preflight resources, batched `crew-step`, stale-blocker reassessment and explicit local research. Read [stateflow details](V4_STATEFLOW.md); old examples remain low-level protocol references, not a requirement to call every diagnostic manually.

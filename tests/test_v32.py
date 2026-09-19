@@ -70,8 +70,8 @@ class V32Tests(unittest.TestCase):
     def test_compaction_does_not_install_inapplicable_context_limit(self):
         group=definition(Path(sys.executable),ROOT,self.state,'PostCompact')
         self.assertNotIn('additionalContextLimit',group['hooks'][0])
-    def test_wrong_event_type_is_controlled_error(self):
-        with self.assertRaises(HarnessError): self.hooks.handle({**self.event,'hook_event_name':[]})
+    def test_wrong_event_type_cannot_activate_or_block_a_task(self):
+        self.assertEqual({},self.hooks.handle({**self.event,'hook_event_name':[]}))
     def test_wrong_turn_type_is_controlled_error(self):
         with self.assertRaises(HarnessError): self.hooks.handle({**self.event,'turn_id':[]})
     def test_wrong_stop_flag_cannot_disable_guard(self):

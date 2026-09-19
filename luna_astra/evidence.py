@@ -16,6 +16,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 from .util import HarnessError, strict_json, canonical, file_hash, inside, json_hash, no_symlinks, snapshot
+from .paths import identity as path_identity
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -145,8 +146,8 @@ class Evidence:
             environment_keys = original.get("environment_keys", [])
             if not isinstance(environment_keys, list) or any(not isinstance(k, str) or not k for k in environment_keys):
                 raise HarnessError("environment_keys must be strings")
-            clean.append(dict(id=name, argv=argv, dependencies=sorted(set(deps)),
-                              covers=sorted(set(covers)), purpose=purpose, cwd=cwd, identity=identity, reusable=reusable, environment_keys=sorted(set(environment_keys)),expected_absent=sorted(set(absent))))
+            clean.append(dict(id=name, argv=argv, dependencies=sorted({path_identity(self.workspace, d) for d in deps}),
+                              covers=sorted(set(covers)), purpose=purpose, cwd=cwd, identity=identity, reusable=reusable, environment_keys=sorted(set(environment_keys)),expected_absent=sorted({path_identity(self.workspace, d) for d in absent})))
         allowed = task.get("allowed_paths", [])
         protected = task.get("protected_paths", [])
         for field, paths in (("allowed_paths", allowed), ("protected_paths", protected)):
@@ -178,7 +179,11 @@ class Evidence:
         for n in spec.get('expected_absent',[]):
             if inside(self.workspace,n).exists():raise HarnessError('required deleted path still exists: '+n)
         environment = {key: os.environ.get(key) for key in spec.get("environment_keys", [])}
-        return {"executable_sha256": file_hash(Path(resolved)), "executable_path": resolved,
+        with self._db() as db:
+            requirements=(self._get(db,'task') or {}).get('requirements')
+        execution={k:spec.get(k) for k in ('argv','dependencies','expected_absent','cwd','identity','environment_keys')}
+        return {"execution_sha256":json_hash(execution),"requirements_sha256":json_hash(requirements),
+                "executable_sha256": file_hash(Path(resolved)), "executable_path": resolved,
                 "declared_environment_sha256": json_hash(environment),
                 "files": snapshot(self.workspace, spec["dependencies"]),
                 "executable_mode": __import__("stat").S_IMODE(Path(resolved).stat().st_mode),
@@ -248,13 +253,21 @@ class Evidence:
             raise HarnessError('corrupt reusable check definition')
         row = db.execute("SELECT * FROM attempts WHERE check_id=? AND task_hash=? ORDER BY seq DESC LIMIT 1",
                          (check["id"], task_hash)).fetchone()
+        cross_task=False
+        if spec.get('reusable') is True:
+            latest=db.execute("SELECT * FROM attempts WHERE check_id=? ORDER BY seq DESC LIMIT 1",(check['id'],)).fetchone()
+            if latest is not None and latest['task_hash']!=task_hash:
+                # Never reach past a newer failure to resurrect an older pass.
+                prior=strict_json(latest['before_json']) if latest['before_json'] else None
+                if isinstance(prior,dict) and prior.get('execution_sha256')==json_hash({k:spec.get(k) for k in ('argv','dependencies','expected_absent','cwd','identity','environment_keys')}):
+                    row=latest;cross_task=True
         state = "NOT_RUN" if row is None else row["status"]
         reason = ""
         if row is not None and state == "PASS":
             try:
                 if type(row["exit_code"]) is not int or row["exit_code"] != 0 or row["ended"] is None or row["error"] is not None:
                     raise HarnessError("invalid successful attempt record")
-                if row["spec_hash"] != check["spec_hash"]:
+                if not cross_task and row["spec_hash"] != check["spec_hash"]:
                     raise HarnessError("check definition changed")
                 current = self._context(spec)
                 if strict_json(row["before_json"]) != current or strict_json(row["after_json"]) != current:
@@ -268,7 +281,7 @@ class Evidence:
                         raise HarnessError("execution log missing or changed")
             except (OSError, ValueError) as exc:
                 state, reason = "STALE", str(exc)
-        return dict(id=check["id"], status=state, attempt=row["seq"] if row else None, reason=reason),spec
+        return dict(id=check["id"], status=state, attempt=row["seq"] if row else None, reason=reason, reused_execution_from_task=row['task_hash'] if row is not None and cross_task and state=='PASS' else None),spec
 
     def _assess(self, db) -> dict[str, Any]:
         task = self._get(db, "task")

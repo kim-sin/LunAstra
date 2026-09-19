@@ -102,7 +102,7 @@ def plan_definition(root: Path, spec: dict, generation: str):
 class Team:
     def __init__(self, store: Store):
         self.store=store
-        with store.db() as db: db.executescript(SCHEMA)
+        store.ensure_schema('team', SCHEMA)
 
     def plan(self, owner: str, root: Path, spec: dict):
         obj=plan_definition(root,spec,str(self.store.get(owner,'generation','startup')))

@@ -39,7 +39,14 @@ class HooksTests(unittest.TestCase):
     def test_unknown_event_no_state(self):
         self.assertEqual(self.h.handle({**self.event,'hook_event_name':'Unknown'}),{});self.assertFalse(self.state.exists())
     def test_core_is_bounded(self):
-        text=self.h.handle(self.event)['hookSpecificOutput']['additionalContext'];self.assertLess(len(text),4300)
+        text=self.h.handle(self.event)['hookSpecificOutput']['additionalContext']
+        from luna_astra.activation import APPLICABILITY,header
+        scope=header(identity(self.event)[0],'worker',self.event['model'],'t1')
+        # Preserve the original 4300-character body budget; account explicitly
+        # for the new required lifetime header instead of hiding its cost.
+        self.assertEqual(1,text.count(APPLICABILITY))
+        self.assertLess(len(text)-len(scope)-len(APPLICABILITY)-2,4300)
+        self.assertLess(len(text),4300+len(scope)+len(APPLICABILITY)+2)
     def test_no_workspace_files_written(self):
         before={p.name:p.read_bytes() for p in self.ws.iterdir()};self.h.handle(self.event)
         self.assertEqual(before,{p.name:p.read_bytes() for p in self.ws.iterdir()})

@@ -159,7 +159,7 @@ class AdvisoryInstallationTests(unittest.TestCase):
     def test_runtime_directory_symlink_refused_before_hook_changes(self):
         self.home.mkdir();(self.home/'luna-astra').mkdir()
         external=self.base/'external';external.mkdir();(external/'keep').write_text('keep')
-        (self.home/'luna-astra/state-v3').symlink_to(external,target_is_directory=True)
+        (self.home/'luna-astra/state-v4').symlink_to(external,target_is_directory=True)
         with self.assertRaises(HarnessError):Installer(ROOT,self.home).apply()
         self.assertFalse((self.home/'hooks.json').exists())
         self.assertEqual((external/'keep').read_text(),'keep')

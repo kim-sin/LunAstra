@@ -67,7 +67,9 @@ class IntegrationTests(unittest.TestCase):
             finally:
                 backup.rename(helper)
 
-    def test_cli_invalid_json_and_opaque_key_refused(self):
-        for args,data in [(['hook'],'{'),(['--session','../escape','status'],None)]:
-            run=subprocess.run([sys.executable,str(ROOT/'luna.py')]+args,input=data,text=True,capture_output=True,timeout=15)
-            self.assertNotEqual(run.returncode,0)
+    def test_cli_unauthorized_hook_json_inert_and_opaque_key_refused(self):
+        # Hook input cannot block another model; helper path authority is unchanged.
+        run=subprocess.run([sys.executable,str(ROOT/'luna.py'),'hook'],input='{',text=True,capture_output=True,timeout=15)
+        self.assertEqual(0,run.returncode);self.assertEqual({},json.loads(run.stdout))
+        run=subprocess.run([sys.executable,str(ROOT/'luna.py'),'--session','../escape','status'],text=True,capture_output=True,timeout=15)
+        self.assertNotEqual(run.returncode,0)

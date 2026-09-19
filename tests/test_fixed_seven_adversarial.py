@@ -62,6 +62,9 @@ class FixedSevenAdversarialTests(unittest.TestCase):
     def test_issue_requires_repair_then_new_review_with_same_ids(self):
         self.f.planning();self.f.dispatch();self.f.reports();ev=self.f.checked_output()
         self.f.crew.review(self.f.owner,'Inspect assembled output');self.f.dispatch();self.f.reports('issues')
+        # The root actually retrieves current issue reports before deciding.
+        from luna_astra.controller import Controller
+        Controller(self.f.store,PACKAGE).step(self.f.owner,details=True)
         self.finish_root(ev)
         with self.assertRaises(HarnessError): self.f.crew.complete(self.f.owner,'Ignore the issue')
         self.f.crew.execute(self.f.owner,{'decision':'Resolve the reported issue and inspect related obligations','tasks':self.f.tasks()},repair=True)

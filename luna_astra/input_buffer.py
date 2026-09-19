@@ -30,6 +30,9 @@ def append(store,key,name,offset,chunk):
     return {'characters':len(new),'retry_reused':False}
 
 def read(store,key,name):
+    if isinstance(name,str) and name.startswith('sha256:'):
+        from .requests import read as read_request
+        return read_request(store.directory,key,name)
     raw=store.get(key,_name(name))
     if not isinstance(raw,str) or len(raw.encode('utf-8'))>MAX_BYTES:raise HarnessError('missing or corrupt input buffer')
     try:

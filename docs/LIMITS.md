@@ -1,3 +1,5 @@
+> 4.2 update: current short-context, batch-wait and V1/V2 behavior is specified in [V4_2_PERFORMANCE.md](V4_2_PERFORMANCE.md). Older full-history/V1-only descriptions below apply to preserved legacy mode, not new capsule runs. Actual host verification remains separate.
+
 # Limits
 
 - LunAstra changes orchestration behavior; it does not change model weights or guarantee Astra-equivalent results.

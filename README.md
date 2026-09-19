@@ -4,11 +4,29 @@
   <img src="docs/assets/lunastra-hero.webp" width="420" alt="LunAstra: a robot and a cat watching the moon together" />
 </p>
 
+
+## 4.2: less repeated work, same seven members
+
+Research wakes on a result batch or actionable event, not every successful job. New workers receive short assignment references rather than full parent history; the first of the same six verifies an actual Luna hook before the other five. Native V1 and V2 have separate spawn/reuse/wait/identity handling, selected from the actual host tool schema. Report digests, indexed queue reads and deferred redundant scans reduce control traffic. Final acceptance still checks real file bytes.
+
+No model/reasoning setting is changed. Existing full-context crews are preserved. The scope and safe limits, including native identity requirements, are in [4.2 implementation notes](docs/V4_2_PERFORMANCE.md). Real Windows speed, subscription usage and output quality remain unmeasured.
+
+## Model isolation retained from 4.1
+
+Newly injected instructions are conditional, Luna-only and scoped to an activation/turn/role. A prior Luna protocol is inactive for non-Luna or unknown-model turns and when hooks are disabled/unregistered. The extension never changes the selected model to satisfy fixed-seven. **This does not delete instructions already present in an old conversation.** Pre-4.1 injected text cannot be patched retroactively; use a new conversation for clean non-Luna work.
+
+Parsed `event.model` is the only activation input. Text mentioning Luna, UI labels, config guesses and stored prior model names cannot authorize it. Bare `gpt-reserve` is UNKNOWN and inactive in this release until a reliable Luna discriminator is demonstrated. Explicit `gpt-<version>-luna...` variants are unchanged.
+
+After you choose to register this build, `CHECK_MODEL_GATE.cmd` arms a private capture for at most 300 seconds or 128 events. It does not register hooks or start a model. `MODEL_GATE_REPORT.cmd` exports the allowlisted report; `STOP_MODEL_GATE.cmd` stops early and retains evidence. Normal non-Luna operation does not record diagnostic events. See [model scope, diagnostics and live acceptance](docs/MODEL_SCOPE.md).
+
+`INSTALL_LUNA_HOME.cmd` / `CHECK_LUNA_HOME.cmd` / `UNREGISTER_LUNA_HOME.cmd` target `~/.codex-lunastra` instead of the default home. **They do not route Codex Desktop/IDE, copy login/config files, or disable hooks registered in another home.** CLI support alone does not establish Desktop/IDE routing. Use the isolated target only after confirming the effective home in the actual host. Normal single-home mixed-model use still depends on the model gate, not repeated install/unregister cycles.
+
+
 ## A moon dreaming of the stars.
 
 **Keep Luna. Give it a team that plans, builds, challenges, and checks its work.**
 
-LunAstra 3.2.0 **fixed-seven** keeps one main Luna and six persistent Luna children. They form a plan, work on separate obligations, and review the assembled result. The same six native sessions are reused; finishing a phase is not an excuse to start another swarm.
+LunAstra 4.3.0 **batchflow.3 / fixed-seven** keeps one main Luna and six persistent Luna children. They form a plan, work on separate obligations, and review the assembled result. The same six native sessions are reused; finishing a phase is not an excuse to start another swarm.
 
 The ambition is to approach Astra Max-level task quality and efficiency with a light Luna configuration. That is a real-task evaluation target, **not a measured result of this release**. LunAstra does not call Astra, change model weights, select a heavier model, or quietly increase reasoning effort.
 
@@ -20,10 +38,25 @@ For people who want more from the Luna they already use. Not just another answer
 
 Seven sessions do not automatically produce seven times the insight. LunAstra makes the work explicit instead: independent perspectives before committing to a plan, bounded implementation, evidence-based decisions, and two members who never implement and remain independent acceptance reviewers.
 
+## What changes in 4.0
+
+- A typed preflight registry rejects the wrong workspace and missing required inputs before spawning workers; absent outputs are allowed.
+- `crew-step` groups current reports, legal actions, reservations and batch waits. Native calls and semantic decisions still belong to the actual host/root.
+- Long literal JSON is staged automatically by the hook as a private owner-bound content-addressed request, rather than model-driven 1,000-character chunks.
+- Changed dependencies make old blockers stale and eligible for a same-member recheck, never automatically successful. Results and incomplete certification are separate.
+- Canonical path comparisons, opt-in deterministic receipt reuse, and snapshot/acceptance-bound review reuse remove identified false gates without ignoring real changes.
+- Explicit continuous research uses a persistent local compute queue, verifier receipts, cooperative pause/drain and same-six checkpoint resumption. It does not trade, call a model API or promote authority.
+
+See [4.0 behavior, migration and limits](docs/V4_STATEFLOW.md) and [release notes](docs/RELEASE_4.3.0.md).
+This archive is a locally tested software build. Live Windows Codex, model quality, subscription usage savings and wall-clock speedup need separate measurement.
+
 ## How it works
 
 ```text
 Your request
+    |
+    v
+PREPARE resources and exact workspace
     |
     v
 Main Luna + six persistent Luna children
@@ -91,7 +124,7 @@ Give Luna the task normally. You do not have to invent six roles or fill out the
 
 The local helper supplies the phase contract, dispatch tickets, evidence storage, and integration checks. **Native Codex, not the helper, actually starts and communicates with the models.** The root performs the returned native calls and makes evidence-based decisions. A list of six reservations is not six running agents.
 
-For status, use the hook-supplied helper command followed by `crew-state`. `context --recover` restores the contract, phase, exact member identities, and current work references. `crew-report-read SLOT` returns a full current report only when needed. A status question can be acknowledged with `crew-continue` without restarting active work; genuinely changed requirements use an explicit revision.
+For the next action and compact progress, use the hook-supplied helper followed by `crew-step`; `crew-state` remains a detailed diagnostic. `context --recover` restores the contract, phase, exact member identities, and current work references. `crew-report-read SLOT` returns a full current report only when needed. A status question can be acknowledged with `crew-continue` without restarting active work; genuinely changed requirements use an explicit revision.
 
 ## Boundaries that stay intact
 
@@ -106,9 +139,9 @@ Read [Security](SECURITY.md), [Limits](docs/LIMITS.md), and [Compatibility](docs
 ```sh
 python3 -m pip install -r requirements-dev.txt
 python3 tools/validate.py --output /tmp/lunastra-validation
-python3 tools/release.py --source-output /tmp/LunAstra-3.2.0-source.zip
-python3 tools/release.py --output /tmp/LunAstra-3.2.0.zip
-python3 tools/release.py --verify /tmp/LunAstra-3.2.0.zip
+python3 tools/release.py --source-output /tmp/LunAstra-4.3.0-source.zip
+python3 tools/release.py --output /tmp/LunAstra-4.3.0.zip
+python3 tools/release.py --verify /tmp/LunAstra-4.3.0.zip
 ```
 
 The test suite uses native-shaped **synthetic** model events and real local subprocesses, files, SQLite records, installation copies, and Git worktrees. It checks the software contract without charging a model account. It does not measure Astra Max parity or prove that a particular live Codex app exposes the required tools.
@@ -117,7 +150,7 @@ Use the separate [evaluation protocol](evals/PROTOCOL.md) for controlled light-L
 
 ## Update or remove
 
-Keep each distribution in its own folder. Installed payloads are content-addressed and earlier records are preserved. Review changed hooks and open a new session after updating.
+Keep each distribution in its own folder. Version 4 uses separate `state-v4`; `state-v3` is not converted or deleted. Finish/drain old active work with its matching build before upgrading. Installation refuses a payload change when recorded old work/controllers remain unresolved. Installed payloads are content-addressed and earlier records are preserved. Review changed hooks and open a new session after updating.
 
 `UNREGISTER.cmd` removes owned hook registrations without deleting local work. `PURGE.cmd` is a separate, explicit owned-data removal flow with activity and ownership checks. Read [Removal](docs/REMOVAL.md) before deleting state or worktree copies. Do not use an older dynamic-team build to resume an active fixed-seven run.
 
@@ -126,7 +159,7 @@ Keep each distribution in its own folder. Installed payloads are content-address
 [Stability maintenance notes](docs/STABILITY.md)
 
 
-[Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md) · [Architecture](docs/ARCHITECTURE.md) and [Compatibility](docs/COMPATIBILITY.md) · [First-use check](docs/SMOKE_TEST.md) and [Troubleshooting](docs/TROUBLESHOOTING.md) · [Validation](docs/VALIDATION.md), [Evaluation](evals/PROTOCOL.md), and [Limits](docs/LIMITS.md) · [Security](SECURITY.md), [Removal](docs/REMOVAL.md), and [Publishing](docs/PUBLISHING.md) · [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), and [Release notes](docs/RELEASE_3.2.0.md)
+[Fixed-seven protocol and recovery](docs/FIXED_SEVEN.md) · [Architecture](docs/ARCHITECTURE.md) and [Compatibility](docs/COMPATIBILITY.md) · [First-use check](docs/SMOKE_TEST.md) and [Troubleshooting](docs/TROUBLESHOOTING.md) · [Validation](docs/VALIDATION.md), [Evaluation](evals/PROTOCOL.md), and [Limits](docs/LIMITS.md) · [Security](SECURITY.md), [Removal](docs/REMOVAL.md), and [Publishing](docs/PUBLISHING.md) · [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), and [Release notes](docs/RELEASE_4.3.0.md)
 
 ## License
 

@@ -14,7 +14,8 @@ import sys
 import time
 import uuid
 from . import __version__, __build__
-from .hooks import EVENTS
+from .model_gate import EVENTS
+from .hook_policy import MATCHER
 from .util import HarnessError, atomic_write, canonical, digest, file_hash, load_json, no_symlinks, write_json
 
 OWNER='LunAstra / '
@@ -51,10 +52,13 @@ def definition(python,release,state,event):
     # Any possible Luna event still reaches luna.py, which parses JSON and validates the exact model.
     # False positives merely pay the normal Python cost; non-Luna events usually avoid Python entirely.
     child=shlex.join(argv)
+    trace_child=shlex.join(argv[:-1]+['--trace-model-gate','hook'])
+    arm=state.parent/'model-gate-trace'/'active.json'
     posix_script=(
         "payload=$(cat); "
+        "if [ -f "+shlex.quote(str(arm))+" ]; then printf '%s' \"$payload\" | "+trace_child+"; else "
         "case \"$payload\" in *-luna*|*gpt-reserve*|*'\\u'*) printf '%s' \"$payload\" | "+child+
-        " ;; *) printf '{}\\n' ;; esac"
+        " ;; *) printf '{}\\n' ;; esac; fi"
     )
     posix='sh -c '+shlex.quote(posix_script)
 
@@ -64,6 +68,7 @@ def definition(python,release,state,event):
             "$utf8=[System.Text.UTF8Encoding]::new($false); "
             "[Console]::InputEncoding=$utf8; [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8; "
             "$raw=[Console]::In.ReadToEnd(); "
+            "if([System.IO.File]::Exists("+powershell_argv([str(arm)])[2:]+")){$raw | "+powershell_argv(argv[:-1]+['--trace-model-gate','hook'])+"; exit $LASTEXITCODE}; "
             "if((-not $raw.Contains('-luna')) -and (-not $raw.Contains('gpt-reserve')) -and (-not $raw.Contains('\\u'))){[Console]::Out.WriteLine('{}'); exit 0}; "
             "$raw | "+powershell_argv(argv)+'; exit $LASTEXITCODE')
     windows='powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand '+base64.b64encode(script.encode('utf-16-le')).decode('ascii')
@@ -71,7 +76,8 @@ def definition(python,release,state,event):
     handler={'type':'command','command':command,'commandWindows':windows,'statusMessage':OWNER+event,'timeout':10 if event!='Interrupt' else 3}
     if event not in {'Stop','SubagentStop','Interrupt','PostCompact'}:handler['additionalContextLimit']=3500
     group={'hooks':[handler]}
-    if event not in {'Stop','UserPromptSubmit','Interrupt'}:group['matcher']='.*'
+    if event in {'PreToolUse','PostToolUse'}:group['matcher']=MATCHER
+    elif event not in {'Stop','UserPromptSubmit','Interrupt'}:group['matcher']='.*'
     return group
 
 def decoded(command):
@@ -161,7 +167,7 @@ class Installer:
     def plan(self):
         files=payload(self.package);sha=digest(canonical(files).encode())
         release=self.home/'luna-astra'/'releases'/(__version__+'-'+sha[:16])
-        state=self.home/'luna-astra'/'state-v3';no_symlinks(state)
+        state=self.home/'luna-astra'/'state-v4';no_symlinks(state)
         path=self.home/'hooks.json';before,obj=read_hooks(path);receipt=self._receipt()
         clean=strip_owned(obj,receipt,self.home)
         # Do not duplicate an apparently owned hook after its ownership receipt was lost/edited.
@@ -175,11 +181,26 @@ class Installer:
                 'hooks_path':str(path),'before_sha256':digest(before) if before is not None else None,
                 'hooks_after':after,'needs_hook_change':after!=obj,
                 'untouched':['config.toml','AGENTS.md','auth','model','reasoning','parallel allocation','trust','project files','running processes'],
-                'activation':'INSTALLED_IS_NOT_LIVE_VERIFIED'}
+                'activation':'INSTALLED_IS_NOT_LIVE_VERIFIED','codex_home':str(self.home)}
+    def registration_status(self):
+        """Count exact owned handlers; a visible name alone proves no activation."""
+        _,obj=read_hooks(self.home/'hooks.json')
+        clean=strip_owned(obj,self._receipt(),self.home)
+        count=lambda data:sum(len(g['hooks']) for groups in data.get('hooks',{}).values() for g in groups)
+        owned=count(obj)-count(clean)
+        return {'HOOKS_REGISTERED':owned>0,'owned_handlers':owned,
+                'handler_bound_home':str(self.home),'host_effective_codex_home':'UNKNOWN'}
+
     def apply(self):
         self.home.mkdir(parents=True,exist_ok=True)
         with install_lock(self.home):
             plan=self.plan();release=Path(plan['release']);no_symlinks(release)
+            previous=self._receipt()
+            if previous and previous.get('payload_sha256')!=plan['payload_sha256']:
+                from .removal import _active_records
+                outstanding=_active_records(self.home/'luna-astra')
+                if outstanding:
+                    raise HarnessError('preserve the active installation: '+', '.join(outstanding),code='UPGRADE_ACTIVE_WORK')
             if release.exists():
                 if payload(release)!=plan['payload_files']:raise HarnessError('installed immutable release changed; will not overwrite')
             else:

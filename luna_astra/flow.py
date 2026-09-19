@@ -14,6 +14,8 @@ from .store import evidence_directory
 from .team import unpack_response
 from .transport import helper_command
 from .util import HarnessError, canonical, json_hash, strict_json
+from .native import is_v2, target, dispatch, capsule_ready
+from .native_flow import NativeFlow, wait_call
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS crew_waits (
@@ -42,13 +44,14 @@ def _value(db, owner, name, default=None):
 class Flow:
     def __init__(self, store, package):
         self.store=store; self.package=Path(package); self.crew=Crew(store,package)
-        with store.db() as db: db.executescript(SCHEMA)
+        store.ensure_schema('flow', SCHEMA)
 
     def prefix(self, key):
         return [sys.executable,str(self.package/'luna.py'),'--state',str(self.store.directory),'--session',key]
 
     def pre_wait(self, owner, call_id, payload):
         s,_=self.crew._current(owner)
+        if is_v2(s):return NativeFlow(self.store,self.crew).pre(owner,call_id,'wait_agent',payload)
         targets=payload.get('targets') if isinstance(payload,dict) else None
         if (not isinstance(targets,list) or not targets or len(targets)>6 or
                 any(not isinstance(x,str) or not x for x in targets) or len(set(targets))!=len(targets)):
@@ -72,6 +75,8 @@ class Flow:
                        (owner,call_id,s['plan_id'],json_hash(payload),canonical(snapshot),time.time()))
 
     def post_wait(self, owner, call_id, response):
+        state=self.crew.status(owner)
+        if state.get('configured') and is_v2(state):return NativeFlow(self.store,self.crew).post(owner,call_id,'wait_agent',response)
         result=unpack_response(response); states=result.get('status')
         error=isinstance(response,dict) and (response.get('isError') is True or response.get('is_error') is True)
         with self.store.db(True) as db:
@@ -117,6 +122,9 @@ class Flow:
                                   'previous_handback':strict_json(row['result']) if row['result'] else None}
                         db.execute('UPDATE work SET state=?,result=? WHERE ticket=?',(terminal,canonical(handback),saved['ticket']))
                         db.execute('UPDATE dispatches SET state=? WHERE ticket=?',(terminal,saved['ticket']))
+            if active and isinstance(states,dict) and states and len(snapshot)>1 and any(
+                    isinstance(t,str) and t.startswith('/') and t not in snapshot for t in states):
+                _kv(db,owner,'flow-singleton-wait',True)
             valid=bool(valid and (not states or matched==len(states)))
             db.execute('UPDATE crew_waits SET finished=?,result_hash=?,valid=? WHERE owner=? AND call_id=?',
                        (time.time(),digest,int(valid),owner,call_id))
@@ -148,24 +156,66 @@ class Flow:
             if row['ticket'] in unsettled:
                 return {**base,'action':'BLOCKED','reason':'Native dispatch acknowledgement unresolved; retain this call and all six sessions, never spawn replacements',
                         'slot':row['id'],'dispatch_state':unsettled[row['ticket']]}
-        if any(r['state']=='reserved' for r in s['tasks']): return {**base,'action':'DISPATCH','helper':'crew-next'}
+        due=self.store.get(owner,'native-list-due')
+        if is_v2(s) and due and due.get('plan_id')==s['plan_id']:
+            return {**base,'action':'OBSERVE_NATIVE','native_call':{'tool':'list_agents','arguments':{}},
+                    'reason':'V2 mailbox wake is not completion; observe canonical task statuses'}
+        if not capsule_ready(self.store,owner,s):
+            first=next((r for r in s['tasks'] if target(self.store,owner,int(r['id'][1:]),r['agent_id'])),None)
+            if first:
+                native=self._native(owner,first)
+                count=self.store.get(owner,'flow-recovery-count:'+str(first['ticket']),0)
+                if native and native['state']=='completed' and first['state']=='returned' and count<MAX_RECOVERIES:
+                    return {**base,'action':'RECOVER','slot':first['id'],'helper':'crew-recover '+first['id'][1:],
+                            'reason':'First capsule member must join with an actual Luna hook before the remaining five are dispatched'}
+                if native and native['state'] in {'completed','errored','interrupted','shutdown','not_found'}:
+                    return {**base,'action':'BLOCKED','slot':first['id'],'reason':'Capsule model/identity handshake failed; no extra models or replacement crew',
+                            'native_state':native['state']}
+                return {**base,'action':'WAIT','slot':first['id'],'slots':[first['id']],
+                        'native_call':wait_call(s,[first['agent_id']]),
+                        'reason':'Await the first actual Luna hook/crew-join before dispatching the other five; effort remains unmeasured'}
+        from .native import capacity_problem
+        capacity=capacity_problem(s)
+        if capacity:return {**base,'action':'BLOCKED','kind':'HOST_CAPABILITY','reason':capacity['message'],'capacity':capacity}
+        if any(r['state']=='reserved' for r in s['tasks']):return {**base,'action':'DISPATCH','helper':'crew-next'}
         done={r['id'] for r in s['tasks'] if r['state']=='accepted'}
         for row in s['tasks']:
             native=self._native(owner,row)
             if native and native['state'] in {'errored','interrupted','shutdown','not_found'}:
                 return {**base,'action':'BLOCKED','slot':row['id'],'native_state':native['state'],'reason':'Observed native failure; preserve the same sessions and the actual failure, not a fabricated report'}
-            if row['state'] in {'returned','accepted'} and s['reports'].get(row['ticket'],{}).get('verdict')=='blocked':
-                return {**base,'action':'BLOCKED','slot':row['id'],'reason':'Inspect the concrete source-linked blocker in crew-report-read '+row['id'][1:]}
+            report=s['reports'].get(row['ticket'],{})
+            if row['state'] in {'returned','accepted'} and report.get('verdict')=='blocked':
+                from .blockers import freshness
+                observed=freshness(self.store,row['ticket'],report,s['requirements'])
+                if observed['state']=='STALE' and row['state']=='returned' and s['phase']!='REVIEW':
+                    if not native or native['state']!='completed':
+                        return {**base,'action':'WAIT','slot':row['id'],
+                                'native_call':wait_call(s,[row['agent_id']]),
+                                'reason':'Changed blocker needs actual native completion before same-member recheck'}
+                    return {**base,'action':'REASSESS','slot':row['id'],'helper':'crew-recover '+row['id'][1:],
+                            'reason':'Blocked report is stale; recheck this member only, preserving all other work','freshness':observed}
+                # A blocked dependency does not prevent already-dispatched,
+                # independent work from returning. Final promotion stays gated.
+                if any(r['state']=='running' for r in s['tasks']):continue
+                return {**base,'action':'BLOCKED','slot':row['id'],'kind':report.get('blocker_kind','VERIFICATION_INCOMPLETE'),
+                        'result_preserved':True,'freshness':observed,
+                        'reason':'Inspect the concrete source-linked blocker in crew-report-read '+row['id'][1:]}
         # If any work is still running, wait first. This also avoids executing
         # dependency plans before readers and writers finish their current turn.
+        waiting=[]
         for row in s['tasks']:
             report=s['reports'].get(row['ticket']); handback=row['result'] or {}
             native=self._native(owner,row)
             needs_handback=not report or handback.get('status') not in {'ANALYSIS','TESTED'}
-            if (row['state']=='running' or (row['state']=='returned' and needs_handback and not native)) and row['agent_id']:
-                return {**base,'action':'WAIT','slot':row['id'],
-                        'native_call':{'tool':'wait_agent','arguments':{'targets':[row['agent_id']],'timeout_ms':60000}},
-                        'after':'Run crew-drive again. A timeout is not failure; keep waiting on these same six IDs. Do not return to the user merely because they are running.'}
+            if (row['state']=='running' or (row['state']=='returned' and needs_handback and not native)) and target(self.store,owner,int(row['id'][1:]),row['agent_id']):
+                waiting.append(row)
+        if waiting:
+            # Some older native hosts key results by opaque paths. After such a
+            # response, ask one identity at a time rather than guessing a mapping.
+            if self.store.get(owner, 'flow-singleton-wait', False): waiting=waiting[:1]
+            return {**base,'action':'WAIT','slot':waiting[0]['id'],'slots':[r['id'] for r in waiting],
+                    'native_call':wait_call(s,[r['agent_id'] for r in waiting]),
+                    'after':'Use this native wait, then crew-step. A timeout is not completion; retain the same six IDs.'}
         for row in s['tasks']:
             report=s['reports'].get(row['ticket']); handback=row['result'] or {}; native=self._native(owner,row)
             if row['state'] in {'returned','failed'} and (not report or handback.get('status') not in {'ANALYSIS','TESTED'}):
@@ -177,6 +227,10 @@ class Flow:
                             'reason':'Same completed native member must submit its missing report/checked handback; no replacement and no new ticket'}
                 return {**base,'action':'BLOCKED','slot':row['id'],'reason':'Native member failed or report recovery exhausted; preserve exact status and existing work',
                         'native_state':native['state'] if native else 'NOT_OBSERVED','recoveries':count}
+        details=self.crew.pending_report_details(owner,s)
+        if details:
+            return {**base,'action':'READ_REPORTS','slots':details,'helper':'crew-step --details',
+                    'reason':'Current issue/truncated reports must be retrieved in full before a semantic transition'}
         for row in s['tasks']:
             if row['state']=='returned' and row['spec']['kind']=='implement' and not (row['result'] or {}).get('integrated'):
                 return {**base,'action':'INTEGRATE','helper':'team-integrate '+row['id'],'after':'Inspect the patch and team-accept; do not reset user edits'}
@@ -186,9 +240,16 @@ class Flow:
             returned=next((r for r in s['tasks'] if r['state']=='returned'),None)
             if returned: return {**base,'action':'ACCEPT','helper':'team-accept '+returned['id'],'after':'Review the actual result before acceptance, then crew-next'}
             return {**base,'action':'BLOCKED','reason':'No runnable dependency; inspect current work without replacing the crew'}
+        if s.get('mode')=='research' and s['phase']=='EXECUTE':
+            from .research import Research
+            research=Research(self.store,owner,self.package).status()
+            if research.get('configured') and research['state']!='FINISHED':
+                return {**base,'action':'RESEARCH','helper':'research-status; use research-recover on an exited controller; otherwise enqueue/wait or pause for a checkpoint',
+                        'research':{k:research.get(k) for k in ('state','counts','revision','best_verified_candidate','seconds_since_improvement','controller_health')},
+                        'semantic_decision_required':True}
         return {**base,'action':'ADVANCE','helper':{'PLAN':'crew-execute','EXECUTE':'finish current root implementation and checks, then crew-review',
                    'REVIEW':'crew-repair if issues remain; otherwise finish current evidence and crew-complete'}[s['phase']],
-                'after':'Read all six actual crew-report-read results before deciding; next-phase helpers revalidate them'}
+                'after':'Inspect all six current findings via crew-step; read full reports flagged for detail before deciding. Next-phase helpers revalidate source-linked records'}
 
     def prepare_recovery(self, owner, slot):
         if type(slot) is not int or not 1<=slot<=6: raise HarnessError('recovery slot must be 1..6')
@@ -196,10 +257,14 @@ class Flow:
         native=self._native(owner,row)
         if not native or native['state']!='completed' or row['state']!='returned':
             raise HarnessError('recover only a native-completed member; wait for running/unknown members first')
-        if (row['result'] or {}).get('status') in {'PARTIAL','BLOCKED'}:
+        report=s['reports'].get(row['ticket'])
+        from .blockers import freshness
+        observation=freshness(self.store,row['ticket'],report,s['requirements'])
+        stale=bool(report and report.get('verdict')=='blocked' and observation['state']=='STALE' and s['phase']!='REVIEW')
+        if (row['result'] or {}).get('status') in {'PARTIAL','BLOCKED'} and not stale:
             raise HarnessError('inspect the genuine blocked result instead of retrying it blindly')
-        if s['reports'].get(row['ticket'],{}).get('verdict')=='blocked': raise HarnessError('inspect the blocked report')
-        if s['reports'].get(row['ticket']) and (row['result'] or {}).get('status') in {'ANALYSIS','TESTED'}:
+        if report and report.get('verdict')=='blocked' and not stale:raise HarnessError('inspect the blocked report')
+        if report and (row['result'] or {}).get('status') in {'ANALYSIS','TESTED'} and not stale:
             raise HarnessError('this member already has its checked report; do not repeat it')
         count=self.store.get(owner,'flow-recovery-count:'+row['ticket'],0)
         if count>=MAX_RECOVERIES: raise HarnessError('same-ticket report recovery exhausted; preserve the failure')
@@ -210,10 +275,16 @@ class Flow:
                  'LUNASTRA_STATUS=ANALYSIS for read-only evidence or finish tested for a writer. '
                  'No crew-state, no other agents, no replacement, and no invented reports. '
                  'If genuinely unable, report the exact blocker with actual references.')
-        payload={'target':row['agent_id'],'message':message,'interrupt':False}
+        if stale:
+            message=('LUNASTRA_TICKET='+row['ticket']+'\nLUNASTRA_REASSESS: Your earlier blocked report used dependencies that have now changed. '
+                     'Keep the same assignment and session; re-read its current sources, recheck that precise blocker and replace your report. '
+                     'Do not repeat unrelated implementation, delete old results, weaken requirements or report success merely because a file appeared. '
+                     'Use your own helper crew-join, then crew-report and the appropriate checked handback.')
+        tool,payload=dispatch(s,slot,message,target(self.store,owner,slot,row['agent_id']))
         self.store.put(owner,'flow-recovery:'+row['ticket'],{'count':count+1,'payload_hash':json_hash(payload),'plan_id':s['plan_id'],
-                      'native_call_id':native['call_id'],'epoch':native['epoch']})
-        return {'tool':'send_input','arguments':payload,'slot':slot,'ticket':row['ticket'],'reuse_same_session':True}
+                      'native_call_id':native['call_id'],'epoch':native['epoch'],
+                      'mode':'reassess' if stale else 'missing-report','source_observation':observation if stale else None})
+        return {'tool':tool,'arguments':payload,'slot':slot,'ticket':row['ticket'],'reuse_same_session':True}
 
     @staticmethod
     def authorize_recovery(db, owner, s, row, payload, kind):
@@ -221,7 +292,7 @@ class Flow:
         request=_value(db,owner,'flow-recovery:'+row['ticket'])
         native=_value(db,owner,'flow-native:'+row['ticket'])
         count=_value(db,owner,'flow-recovery-count:'+row['ticket'],0)
-        if (kind!='send_input' or row['state']!='returned' or not request or not native or
+        if (kind!=('followup_task' if is_v2(s) else 'send_input') or row['state']!='returned' or not request or not native or
                 native['state']!='completed' or request['plan_id']!=s['plan_id'] or
                 request['epoch']!=_epoch(db,row['ticket']) or request['native_call_id']!=native['call_id'] or
                 request['payload_hash']!=json_hash(payload) or request['count']!=count+1 or count>=MAX_RECOVERIES):
@@ -229,7 +300,23 @@ class Flow:
         handback=strict_json(row['result'] or '{}')
         report=db.execute('SELECT body FROM crew_reports WHERE ticket=?',(row['ticket'],)).fetchone()
         report=strict_json(report[0]) if report else None
-        if handback.get('status') in {'PARTIAL','BLOCKED'} or (report and (report.get('verdict')=='blocked' or handback.get('status') in {'ANALYSIS','TESTED'})):
+        reassess=request.get('mode')=='reassess'
+        if reassess:
+            source=db.execute('SELECT * FROM crew_report_sources WHERE ticket=?',(row['ticket'],)).fetchone()
+            from .crew import fingerprint
+            if not source or not report or report.get('verdict')!='blocked' or source['report_hash']!=json_hash(report):
+                raise HarnessError('stale report identity changed before recovery')
+            current=fingerprint(Path(source['workspace']),strict_json(source['paths']))['sha256']
+            observed=request.get('source_observation') or {}
+            if (source['fingerprint']==current or observed.get('current_fingerprint')!=current or
+                    observed.get('report_hash')!=json_hash(report)):
+                raise HarnessError('dependency recheck no longer matches the prepared recovery')
+            from .blockers import archive_recheck
+            archive_recheck(db,owner,row['ticket'],report,observed)
+            # Remove it from CURRENT reports only after archiving; this is a
+            # stale report, never a deleted failure or an invented clear report.
+            db.execute('DELETE FROM crew_reports WHERE ticket=?',(row['ticket'],))
+        elif handback.get('status') in {'PARTIAL','BLOCKED'} or (report and (report.get('verdict')=='blocked' or handback.get('status') in {'ANALYSIS','TESTED'})):
             raise HarnessError('member result changed; do not repeat a checked or explicitly blocked handback')
         _kv(db,owner,'flow-handback-history:'+row['ticket']+':'+str(count),handback)
         _kv(db,owner,'flow-recovery-count:'+row['ticket'],count+1)
@@ -256,6 +343,12 @@ class Flow:
             from .evidence import Evidence
             ev=Evidence(path.parent).status()
             value.append([ev.get('passed'),ev.get('active'),ev.get('task_hash'),ev.get('finish'),ev.get('checks')])
+        if meta.get('role')=='root':
+            with self.store.db() as db:
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='research_studies'").fetchone():
+                    row=db.execute('SELECT spec FROM research_studies WHERE owner=?',(key,)).fetchone()
+                    if row:
+                        study=strict_json(row[0]);value.append([study['state'],study['revision']])
         return json_hash(value)
 
     def correction(self, key, meta, problem):
@@ -266,14 +359,23 @@ class Flow:
         else: record=dict(old)
         if meta.get('role')=='root':
             action=self.drive(key)
+            if action.get('complete') and problem:
+                action={'action':'REPAIR_VERIFICATION','complete':False,'reason':problem,
+                        'helper':'Inspect uncovered paths and the current proof; do not loop on crew-drive or discard the result.'}
             with self.store.db() as db:
                 waited=db.execute('SELECT 1 FROM crew_waits WHERE owner=? AND finished>? AND valid=1 AND finished-started>=1 LIMIT 1',
                                   (key,record.get('last_stop',0.0))).fetchone()
+            if not waited and meta.get('crew_enabled'):
+                with self.store.db() as db:
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE name='native_observations'").fetchone():
+                        waited=db.execute("SELECT 1 FROM native_observations WHERE owner=? AND kind='wait_agent' AND finished>? AND valid=1 AND started>0 AND finished-started>=1 LIMIT 1",(key,record.get('last_stop',0.0))).fetchone()
+            research_wait=self.store.get(key,'research-last-wait',{})
+            if research_wait.get('ended_at',0)>record.get('last_stop',0.0) and research_wait.get('elapsed',0)>=1:waited=True
             if not waited: record['idle']=record.get('idle',0)+1
             else: record['idle']=0
             allowed=record['idle']<=MAX_IDLE_CORRECTIONS
             text=('LUNASTRA_CONTINUE: '+problem+'. Next step: '+canonical(action)+
-                  '\nUse '+helper_command(self.prefix(key)+['crew-drive'])+' to refresh the next action. '
+                  '\nUse '+helper_command(self.prefix(key)+['crew-step'])+' to refresh the next action. '
                   'Perform the indicated native wait/send and continue the same six sessions through execution and review. '
                   'Do not finalize because workers are merely running; timeout means wait again. Do not create another crew.')
         else:

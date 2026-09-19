@@ -55,10 +55,10 @@ class FlowTests(unittest.TestCase):
         self.assertEqual('running',self.rows()[0]['state'])
         self.assertEqual(0,len(self.f.crew.status(self.f.owner)['reports']))
         self.assertEqual('WAIT',self.flow.drive(self.f.owner)['action'])
-    def test_wait_returns_exact_pending_singleton_id(self):
+    def test_wait_returns_all_exact_pending_ids(self):
         self.report_one()
         action=self.flow.drive(self.f.owner)
-        self.assertEqual(['child-2'],action['native_call']['arguments']['targets'])
+        self.assertEqual([f'child-{i}' for i in range(2,7)],action['native_call']['arguments']['targets'])
     def test_native_completion_is_not_a_fabricated_report(self):
         self.native({'child-1':{'completed':'some prose, NOT a submitted report'}})
         self.assertEqual('returned',self.rows()[0]['state'])
@@ -176,7 +176,10 @@ class FlowTests(unittest.TestCase):
         self.assertEqual('block',self.stop(stop_hook_active=True).get('decision'))
     def test_real_source_linked_blocker_is_distinct_from_waiting(self):
         self.report_one(verdict='blocked')
+        self.assertEqual('WAIT',self.flow.drive(self.f.owner)['action'])
+        for slot in range(2,7):self.report_one(slot=slot)
         self.assertEqual('BLOCKED',self.flow.drive(self.f.owner)['action'])
+        self.assertEqual('blocked',self.f.crew.status(self.f.owner)['reports'][self.rows()[0]['ticket']]['verdict'])
     def test_no_progress_repeated_immediate_stops_are_bounded(self):
         for _ in range(MAX_IDLE_CORRECTIONS):self.assertEqual('block',self.stop(stop_hook_active=True).get('decision'))
         result=self.stop(stop_hook_active=True);self.assertFalse(result['continue'])

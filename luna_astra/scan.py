@@ -41,3 +41,16 @@ def observe(root:Path,max_files=5000,max_bytes=32*1024*1024,max_seconds=1.5):
 def changes(before,after):
     a=before.get('files',{});b=after.get('files',{})
     return sorted(n for n in a.keys()|b.keys() if a.get(n)!=b.get(n))
+
+
+def completeness_problem(before, after):
+    for label,value in (('baseline',before),('current',after)):
+        if not isinstance(value,dict) or value.get('complete') is not True:
+            reason=value.get('reason') if isinstance(value,dict) else 'missing'
+            return label+' workspace observation is incomplete ('+str(reason)+'); preserve checked results, but whole-change coverage is not certified'
+    return None
+
+
+def require_complete(before, after):
+    problem=completeness_problem(before,after)
+    if problem:raise HarnessError(problem,code='WORKSPACE_OBSERVATION_INCOMPLETE')

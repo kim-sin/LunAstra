@@ -15,15 +15,13 @@ from .team import Team
 from .crew import Crew
 from .flow import Flow
 from .scan import observe, changes
+from .paths import covers
 from .jobs import Jobs
 from .transport import tool_name, helper_command, worker_shell_input, literal_argv, literal_shell_input
 
-MAX_INPUT=2*1024*1024
-EVENTS={'SessionStart','SubagentStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','SubagentStop','PostCompact','Interrupt'}
-LUNA_MODEL=re.compile(r'^gpt-\d+(?:\.\d+)*-luna(?:-[a-z0-9][a-z0-9._-]*)?$')
-
-def is_luna(value):
-    return isinstance(value,str) and (value == 'gpt-reserve' or bool(LUNA_MODEL.fullmatch(value)))
+from .model_gate import MAX_INPUT, EVENTS, LUNA_MODEL, is_luna, accepts_event
+from .hook_policy import relevant
+from .activation import APPLICABILITY, header as scope_header, scope_metadata
 
 def identity(event):
     session=event.get('session_id');agent=event.get('agent_id')
@@ -45,9 +43,11 @@ def outcome(response):
     return 'UNKNOWN'
 
 class Hooks:
-    def __init__(self,package:Path,state:Path, *, fixed_seven=False):
+    def __init__(self,package:Path,state:Path, *, fixed_seven=False, trace_model_gate=False):
         self.fixed_seven=fixed_seven
-        self.package=Path(package).resolve();self.state=Path(state).absolute();no_symlinks(self.state)
+        self.package=Path(package);self.state=Path(state)
+        self.trace_model_gate=trace_model_gate
+        self._state_created=False  # Task storage, not diagnostic storage.
 
     def _prompt(self,name):
         path=self.package/'prompts'/name
@@ -55,14 +55,24 @@ class Hooks:
         if path.stat().st_size>16000:raise HarnessError('prompt exceeds package budget')
         return path.read_text(encoding='utf-8').strip()
 
-    def _core(self,key,role):
+    def _core(self,key,role,model,generation='startup'):
         prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
         role_file=('FIXED_'+role.upper()+'.md') if self.fixed_seven else (role.upper()+'.md')
-        return self._prompt('CORE.md')+'\n\n'+self._prompt(role_file)+'\n\n'+(
-            'LUNA_ASTRA_VERSION='+__version__+'\nLUNASTRA_BUILD='+__build__+'\nLOCAL_HELPER_ARGV='+json.dumps(prefix,ensure_ascii=False)+'\nLOCAL_HELPER_COMMAND='+helper_command(prefix)+'\n'+
-            (("Fixed seven parent: use help.fixed_seven and crew-start/next/execute/review/complete. The team-* commands are retained for migration and checked integration only. " if role=="root" else "Fixed seven worker: use your own helper crew-join and crew-report; do not run parent coordination commands. ") if self.fixed_seven else "Use help for the legacy team protocol. ")+
-            "Use read/context for bounded source navigation; maps never replace reading. After compaction run context --recover. "
-            "Local helpers make no model calls and never change the selected Luna or reasoning setting.")
+        role_text=self._prompt(role_file)
+        if role_text.startswith(APPLICABILITY):role_text=role_text[len(APPLICABILITY):].lstrip()
+        return scope_header(key,role,model,generation)+self._prompt('CORE.md')+'\n\n'+role_text+'\n\n'+(
+            'LOCAL_HELPER_ARGV='+json.dumps(prefix,ensure_ascii=False,separators=(',',':'))+'\nLOCAL_HELPER_COMMAND='+helper_command(prefix)+'\n'+
+            (("Fixed seven parent: use help.fixed_seven and crew-start/next/execute/review/complete. The team-* commands are retained for migration and checked integration only. " if role=="root" else "Fixed seven worker: use your own helper crew-join and crew-report; do not run parent coordination commands. ") if self.fixed_seven else "")+
+            "After compaction: context --recover.")
+
+
+    def _recovery_core(self, key, role, model, generation):
+        if not self.fixed_seven:
+            return self._core(key,role,model,generation)  # Legacy roles must not acquire a six-member obligation.
+        prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
+        return (scope_header(key,role,model,generation)+APPLICABILITY+'\n\n'+
+                self._prompt('RECOVERY.md')+'\nLOCAL_HELPER_ARGV='+canonical(prefix)+
+                '\nLOCAL_HELPER_COMMAND='+helper_command(prefix))
 
 
     def _module(self,store,key,name,generation):
@@ -70,16 +80,26 @@ class Hooks:
         return ''
 
     def handle(self,event):
-        # Diagnostics are separate from task control and never certify a host.
-        tracked=(isinstance(event,dict) and isinstance(event.get('hook_event_name'),str)
-                 and event['hook_event_name'] in EVENTS and is_luna(event.get('model')))
+        # Never inspect workspace, aliases or task storage before parsed model authorization.
+        self._state_created=False
+        if accepts_event(event) and not relevant(event):return {}
+        tracked=accepts_event(event)
         try:
             output=self._handle(event)
         except Exception:
             if tracked:self._record_connection(event,None,failed=True)
+            self._record_gate(event,None,failed=True)
             raise
         if tracked:self._record_connection(event,output)
+        self._record_gate(event,output)
         return output
+
+    def _record_gate(self,event,output,failed=False):
+        if not self.trace_model_gate:return
+        try:
+            from .gate_trace import record
+            record(self.state,event,output,state_created=self._state_created,failed=failed)
+        except Exception:pass  # Advisory tracing must not affect task decisions.
 
     def _record_connection(self,event,output,failed=False):
         from .connection import record_hook
@@ -90,10 +110,9 @@ class Hooks:
             print('LunAstra connection diagnostics unavailable; do not infer a verified connection.',file=sys.stderr)
 
     def _handle(self,event):
-        if not isinstance(event,dict):raise HarnessError('hook input must be a JSON object')
-        kind=event.get('hook_event_name')
-        if not isinstance(kind, str):raise HarnessError('hook_event_name must be a string')
-        if kind not in EVENTS or not is_luna(event.get('model')):return {}  # No state creation for other models.
+        if not accepts_event(event) or not relevant(event):return {}  # All untrusted/malformed/other model input is inert.
+        self.package=self.package.resolve();self.state=self.state.absolute();no_symlinks(self.state)
+        kind=event['hook_event_name']
         for field in ('turn_id','tool_use_id','tool_name'):
             if field in event and (not isinstance(event[field],str) or not event[field]):
                 raise HarnessError('invalid '+field)
@@ -104,11 +123,19 @@ class Hooks:
             raise HarnessError('stop_hook_active must be boolean')
         # Some hosts use the child's own session id on tool events. Resolve only
         # an alias previously observed in a genuine SubagentStart payload.
+        self._state_created=not (self.state/'runtime.sqlite3').is_file()
         store=Store(self.state)
+        with store.connection():
+            return self._handle_stored(event, store)
+
+    def _handle_stored(self, event, store):
+        kind = event['hook_event_name']
         alias_id=event.get('agent_id') or event.get('session_id')
         alias=store.get('__agent_alias__',alias_id) if isinstance(alias_id,str) else None
         if alias is not None and (not isinstance(alias,dict) or not all(isinstance(alias.get(n),str) for n in ('parent','key','model'))):
             raise HarnessError('invalid persisted agent alias')
+        if alias and alias.get('model')!=event['model']:
+            raise HarnessError('persisted worker model mismatch; do not reuse the old activation or ticket')
         if alias and event.get('session_id') in {alias['parent'],alias_id} and alias.get('model')==event['model']:
             event={**event,'session_id':alias['parent'],'agent_id':alias_id}
         key,role,root=identity(event)
@@ -122,9 +149,12 @@ class Hooks:
                 legitimate.add(candidate.resolve())
             if root in legitimate:key=alias['key']
         if kind=='SubagentStart':store.put('__agent_alias__',event['agent_id'],{'parent':event['session_id'],'key':key,'model':event['model']})
-        store=Store(self.state); meta=store.get(key,'meta')
+        meta=store.get(key,'meta')
         if meta is not None and not isinstance(meta,dict):raise HarnessError('invalid persisted session metadata')
+        if meta and (meta.get('model')!=event['model'] or meta.get('role')!=role or meta.get('key')!=key):
+            raise HarnessError('persisted activation model/role/key mismatch; preserve existing state')
         new=not meta
+        self._state_created=self._state_created or new
         meta=meta or {'key':key,'role':role,'workspace':str(root),'model':event['model'],'created_at':time.time(),
                      'context_emitted':False,'helper_used':False,'actual_model_parity':'NOT_MEASURED'}
         if new and role=='root' and self.fixed_seven:meta['crew_enabled']=True
@@ -133,8 +163,12 @@ class Hooks:
             with store.db() as db:
                 bound=db.execute('SELECT owner FROM work WHERE agent_id=? ORDER BY rowid DESC LIMIT 1',(event.get('agent_id'),)).fetchone()
             meta['crew_enabled']=bool(store.get(bound['owner'],'meta',{}).get('crew_enabled')) if bound else True
+        generation=str(event.get('turn_id') or store.get(key,'generation','startup'))
+        meta.update(scope_metadata(key,role,event['model'],generation))
         meta['version']=__version__;meta['build']=__build__;meta['last_event']=kind
         meta.update(session_id=event['session_id'],agent_id=event.get('agent_id'))
+        if kind=='SubagentStart':meta['native_start_observed']=True
+        if role=='worker':meta['native_model_observed']=event['model']
         # Native SubagentStart.session_id is the CHILD session, not its parent.
         # The parent is bound by an observed native spawn result in Team.join.
         if role=='root':
@@ -153,7 +187,11 @@ class Hooks:
         store.put(key,'generation',generation)
         parts=[];emitted_core=False;tool_update=None;coordinator=Coordinator(store,root)
         if new and kind not in {'Stop','SubagentStop'}:
-            store.put(key,'source_baseline',observe(root))
+            # A fixed worker has no write authority until a joined assignment.
+            # Readers use the root's immutable scope identity, not six whole-tree scans.
+            if role=='worker' and meta.get('crew_enabled'):
+                store.put(key,'source_baseline',{'files':{},'complete':False,'reason':'unjoined_read_only'})
+            else:store.put(key,'source_baseline',observe(root))
         if kind=='PostCompact':
             # This native event cannot return additionalContext. Mark a restore,
             # then emit once on SessionStart(compact) or the next context-capable event.
@@ -164,22 +202,35 @@ class Hooks:
         if not emitted_core and kind not in {'Stop','SubagentStop'} and (kind in {'SessionStart','SubagentStart'} or new or restore or not meta.get('context_emitted') or meta.get('kernel_version')!=__version__ or meta.get('kernel_build')!=__build__):
             first_core=store.once(key,'start_core',__version__+'+'+__build__)
             if restore or first_core or not meta.get('context_emitted') or meta.get('kernel_version')!=__version__ or meta.get('kernel_build')!=__build__ or event.get('source') in {'resume','clear','compact','fork'}:
-                parts.append(Hooks(self.package,self.state,fixed_seven=bool(meta.get('crew_enabled')))._core(key,role));emitted_core=True
+                parts.append(Hooks(self.package,self.state,fixed_seven=bool(meta.get('crew_enabled')))._recovery_core(key,role,event['model'],generation) if restore and meta.get('context_emitted') else Hooks(self.package,self.state,fixed_seven=bool(meta.get('crew_enabled')))._core(key,role,event['model'],generation));emitted_core=True
                 note=store.get(key,'note')
-                if note:parts.append('Saved working note (historical; recheck changed source): '+canonical(note))
-                if restore and role=='root':
-                    parts.append('Saved team state: '+canonical(Crew(store,self.package).summary(key) if meta.get('crew_enabled') else self._team_summary(Team(store).status(key))))
+                if note:
+                    note_text=canonical(note)
+                    if len(note_text.encode('utf-8'))<=1000:
+                        parts.append('Saved note (historical, recheck against current sources): '+note_text)
+                    else:parts.append('A saved working note exists. Retrieve context --recover; it is historical, not current authority.')
+                if restore and role=='root' and meta.get('crew_enabled'):
+                    state=Crew(store,self.package).status(key)
+                    if state.get('configured'):
+                        compact={'phase':state['phase'],'round':state['round'],
+                                 'members':[{'slot':m['slot'],'agent_id':m['agent_id']} for m in state['members']]}
+                        parts.append('Fixed-seven saved state (historical, not completion): '+canonical(compact))
+                    parts.append('Use crew-step for current legal actions and context --recover for the retained full contract; do not restart the team.')
         if kind=='UserPromptSubmit':
+            if not emitted_core:
+                parts.append(APPLICABILITY)
             prompt=event.get('prompt','')
             if role=='root' and meta.get('crew_enabled') and not prompt.startswith('LUNASTRA_CONTINUE:'):
                 store.put(key,'request_hash',json_hash(prompt))
             store.put(key,'current_turn',generation)
             store.put(key,'interrupted',False)
-            if store.once(key,'baseline_turn',generation):store.put(key,'source_baseline',observe(root))
+            # Keep the last checked byte baseline. A new prompt is not a new
+            # certificate and must not hide an unverified earlier modification.
+            if store.get(key,'source_baseline') is None:store.put(key,'source_baseline',observe(root))
             if isinstance(prompt,str) and re.search(r'\.(py|ts|js|rs|go)\b|\uCF54\uB4DC|\uCF54\uB529|\uBC84\uADF8|\uAD6C\uD604|\uC624\uB958|\uD14C\uC2A4\uD2B8|\b(fix|implement|debug|refactor|test)\b',prompt,re.I):
                 # A bounded on-demand map, not a full source dump or a new model call.
-                if store.once(key,'prompt_map',generation):
-                    parts.extend(self._map(root,prompt,[]))
+                # Code maps are explicitly requested through context/risk, not
+                # rebuilt on every coding prompt or mutation.
                 if re.search(r'\uB370\uC774\uD130|\uC2DC\uAC04|\uCE90\uC2DC|\uB3D9\uC2DC|\b(data|cache|concurr|timestamp|state)\b',prompt,re.I):
                     parts.append(self._module(store,key,'DATA',generation))
         elif kind=='PreToolUse':
@@ -195,7 +246,7 @@ class Hooks:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
             if name in {'followup_task','send_input'} and role=='root':
                 try:
-                    if meta.get('crew_enabled'):Crew(store,self.package).pre_dispatch(key,uid,payload,event['model'],'send_input')
+                    if meta.get('crew_enabled'):Crew(store,self.package).pre_dispatch(key,uid,payload,event['model'],name)
                     else:Team(store).pre_followup(key,payload)
                 except HarnessError as exc:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
@@ -203,6 +254,14 @@ class Hooks:
                 try: Flow(store,self.package).pre_wait(key,uid,payload)
                 except HarnessError as exc:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
+            if name=='list_agents' and role=='root' and meta.get('crew_enabled'):
+                try:
+                    from .native_flow import NativeFlow
+                    NativeFlow(store,Crew(store,self.package)).pre(key,uid,name,payload)
+                except HarnessError as exc:
+                    return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
+            if name in {'send_message','interrupt_agent'} and meta.get('crew_enabled'):
+                return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Use the current fixed-crew dispatch/checked handback; no side-channel task or interruption.'})
             if name=='resume_agent' and role=='root' and meta.get('crew_enabled'):
                 target=payload.get('id') if isinstance(payload,dict) else None
                 members=Crew(store,self.package).status(key).get('members',[])
@@ -221,33 +280,36 @@ class Hooks:
                     if paths:coordinator.enforce_task(paths,{'allowed_paths':crew.can_write(key)})
                     if name in {'Bash','exec_command','shell_command'}:
                         phase=crew.status(key).get('phase')
-                        command=payload.get('command',payload.get('cmd')) if isinstance(payload,dict) else None
+                        field='cmd' if name=='exec_command' else 'command'
+                        command=payload.get(field) if isinstance(payload,dict) else None
                         prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
-                        try:argv=literal_argv(command)
-                        except HarnessError:
-                            if phase!='EXECUTE':raise
-                            argv=[]  # Ordinary execution commands remain subject to native host controls.
+                        argv=literal_argv(command)
                         own_helper=argv[:len(prefix)]==prefix
+                        if not own_helper:
+                            raise HarnessError('Fixed-seven shell: use this session helper for registered checks/research; use scoped edit tools for source writes. Raw shell write targets cannot be verified before execution.')
                         if phase!='EXECUTE':
                             rest=argv[len(prefix):]
                             if not own_helper:raise HarnessError('planning/review is read-only; use the local helper read/context and crew commands')
                             if rest[:1] in (['--input-json'],['--input-ref']):rest=rest[2:]
-                            if not rest or rest[0] not in {'help','input-append','read','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
-                        if own_helper and name=='Bash':
-                            tool_update=literal_shell_input(command,prefix)
+                            if not rest or rest[0] not in {'help','input-append','read','read-bytes','read-source','resources','context','risk','status','note','trace','jobs','begin','run','run-all','start-check','finish','crew-step','research-status','research-read','research-recover','research-pause','research-resume','crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-review','crew-repair','crew-complete'}:raise HarnessError('unsupported helper during planning/review')
+                        if own_helper:
+                            rewrite=literal_shell_input(command,prefix)
+                            if rewrite is not None:tool_update={**payload,field:rewrite['command']}
                 except HarnessError as exc:
                     return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':str(exc)})
-            if role=='worker' and meta.get('crew_enabled') and name in {'send_input','followup_task','resume_agent','close_agent','wait_agent'}:
+            if role=='worker' and meta.get('crew_enabled') and name in {'send_input','followup_task','resume_agent','close_agent','wait_agent','list_agents'}:
                 return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Only the root dispatches the six crew members.'})
             native_unjoined=(role=='worker' and event['session_id']==event.get('agent_id') and not meta.get('team_ticket'))
             if native_unjoined and paths:
                 return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Join the assigned LunAstra ticket before editing; the child session ID is not parent identity.'})
-            if role=='worker' and name=='Bash' and (meta.get('team_ticket') or native_unjoined):
+            if role=='worker' and name in {'Bash','exec_command','shell_command'} and (meta.get('team_ticket') or native_unjoined):
                 prefix=[sys.executable,str(self.package/'luna.py'),'--state',str(self.state),'--session',key]
                 try:
-                    if not isinstance(payload,dict) or not isinstance(payload.get('command'),str):
-                        raise HarnessError('native Bash hook requires command')
-                    tool_update=worker_shell_input(payload['command'],prefix,joined=bool(meta.get('team_ticket')),read_only=bool(meta.get('read_only')))
+                    field='command' if name in {'Bash','shell_command'} else 'cmd'
+                    if not isinstance(payload,dict) or not isinstance(payload.get(field),str):
+                        raise HarnessError('native '+name+' hook requires '+field)
+                    rewrite=worker_shell_input(payload[field],prefix,joined=bool(meta.get('team_ticket')),read_only=bool(meta.get('read_only')))
+                    if rewrite is not None:tool_update={**payload,field:rewrite['command']}
                 except HarnessError as exc:
                     message=str(exc)+'. Your worker LOCAL_HELPER_COMMAND='+helper_command(prefix)+'. '
                     message+=('Join your current ticket first with crew-join; do not use the inherited parent helper. ' if not meta.get('team_ticket') else '')
@@ -274,7 +336,7 @@ class Hooks:
                         except ValueError:
                             return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'Worker command cwd is outside its assigned checkout.'})
                         no_symlinks(candidate)
-                    else:tool_update={**payload,field:str(root)}
+                    else:tool_update={**payload,**(tool_update or {}),field:str(root)}
 
             if paths and meta.get('read_only'):
                 return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'deny','permissionDecisionReason':'This worker is read-only. Return evidence or a proposed patch to the leader.'})
@@ -295,7 +357,7 @@ class Hooks:
                         'permissionDecisionReason':str(e)+'. Preserve other work; use an isolated patch or resolve ownership.'})
                 parts.append(self._module(store,key,'EDIT',generation))
                 parts.append(self._module(store,key,'VERIFY',generation))
-                if store.once(key,'edit_map',generation):parts.extend(self._map(root,' '.join(normalized_paths),normalized_paths))
+                store.put(key,'changed-path-hints',sorted(set(store.get(key,'changed-path-hints',[]))|set(normalized_paths)))
                 store.put(key,'edited_in_turn',generation)
             store.event(key,'pre:'+uid,'tool_start',{'tool':tool,'input_sha256':json_hash(payload),'edit_paths':paths,
                                                      'outcome':'RUNNING','turn':generation})
@@ -308,7 +370,10 @@ class Hooks:
             if tool_name(tool)=='wait_agent' and role=='root':
                 if meta.get('crew_enabled'):Flow(store,self.package).post_wait(key,uid,event.get('tool_response'))
                 else:Team(store).observed_statuses(key,event.get('tool_response'))
-            if role=='root' and meta.get('crew_enabled') and tool_name(tool) in {'spawn_agent','send_input','wait_agent'}:
+            if tool_name(tool)=='list_agents' and role=='root' and meta.get('crew_enabled'):
+                from .native_flow import NativeFlow
+                NativeFlow(store,Crew(store,self.package)).post(key,uid,'list_agents',event.get('tool_response'))
+            if role=='root' and meta.get('crew_enabled') and tool_name(tool) in {'spawn_agent','send_input','followup_task','wait_agent','list_agents'}:
                 parts.append('LunAstra next action (not task completion): '+canonical(Flow(store,self.package).drive(key)))
             result=outcome(event.get('tool_response'));fingerprint=json_hash([tool,payload])
             recorded=store.event(key,'post:'+uid,'tool_result',{'tool':tool,'input_sha256':fingerprint,
@@ -321,13 +386,21 @@ class Hooks:
                 if count>1 and store.once(key,'repeat:'+fingerprint,generation):
                     parts.append('Repeated failed tool input observed. Check changed source/environment before retrying; this is a hint, not a forced pivot.')
         elif kind in {'Stop','SubagentStop'}:
-            return self._stop(store,key,event,coordinator)
+            return self._scoped_feedback(store,key,self._stop(store,key,event,coordinator))
         return self._output(store,key,kind,parts,emitted_core,{'permissionDecision':'allow','updatedInput':tool_update} if tool_update is not None else None)
 
     def _output(self,store,key,kind,parts,emitted_core=False,extra=None):
         content='\n\n'.join(p for p in parts if p)
         specific={'hookEventName':kind,**(extra or {})}
         if content:
+            meta=store.get(key,'meta',{})
+            if not content.startswith('LUNASTRA_ACTIVATION_ID='):
+                content=scope_header(key,meta['role'],meta['model'],store.get(key,'generation','startup'))+APPLICABILITY+'\n\n'+content
+            if len(content.encode('utf-8'))>12000:
+                content=self._recovery_core(key,meta['role'],meta['model'],store.get(key,'generation','startup'))
+                content+='\nFull protocol/context retained; use context --recover before acting. No omitted context is certified as read.'
+                if len(content.encode('utf-8'))>12000:
+                    raise HarnessError('helper path exceeds bounded hook recovery; use a shorter install path',code='HOOK_CONTEXT_TOO_LARGE')
             specific['additionalContext']=content
             # Count only context present in this response, including a guarded denial.
             with store.db(True) as db:
@@ -339,6 +412,19 @@ class Hooks:
                     meta=strict_json(row[0]);meta.update(context_emitted=True,kernel_version=__version__,kernel_build=__build__,kernel_release=str(self.package),restore_pending=False)
                     db.execute('UPDATE kv SET value=? WHERE scope=? AND name=?',(canonical(meta),key,'meta'))
         return {'hookSpecificOutput':specific} if content or extra else {}
+
+    def _scoped_feedback(self,store,key,output):
+        if not output:return output
+        meta=store.get(key,'meta',{})
+        scope=scope_header(key,meta['role'],meta['model'],store.get(key,'generation','startup'))+APPLICABILITY
+        result=dict(output)
+        for field in ('reason','systemMessage','stopReason'):
+            text=result.get(field)
+            if not isinstance(text,str) or not text:continue
+            # Retain routing recognition; lifetime precedes any renewed obligation.
+            marker='LUNASTRA_CONTINUE:'
+            result[field]=(marker+' '+scope+'\n'+text[len(marker):].lstrip()) if text.startswith(marker) else scope+'\n'+text
+        return result
 
     def _map(self,root,query,hints):
         try:
@@ -355,6 +441,7 @@ class Hooks:
     def _stop(self,store,key,event,coordinator):
         meta=store.get(key,'meta',{})
         if store.get(key,'interrupted',False):return {}
+        coordinator.release_finished_edits(key)
         problem=None
         if meta.get('crew_enabled'):
             crew=Crew(store,self.package)
@@ -375,7 +462,7 @@ class Hooks:
                     # Merely waiting for still-running native work is not an
                     # external blocker. Genuine blocked state remains explicit.
                     flow=Flow(store,self.package)
-                    recoverable=(meta.get('role')=='root' and flow.drive(key)['action'] in {'WAIT','DISPATCH','RECOVER','ADVANCE','INTEGRATE','ACCEPT'})
+                    recoverable=(meta.get('role')=='root' and flow.drive(key)['action'] in {'WAIT','OBSERVE_NATIVE','DISPATCH','RECOVER','REASSESS','RESEARCH','READ_REPORTS','ADVANCE','INTEGRATE','ACCEPT'})
                     if not recoverable:return self._legacy_stop(store,key,event,coordinator)
             handback={'status':'UNVERIFIED','reason':problem,'worker_key':key}
             store.put(key,'last_handback',handback)
@@ -393,10 +480,14 @@ class Hooks:
         root=Path(meta.get('assigned_workspace',meta['workspace']))
         current_generation=str(event.get('turn_id') or store.get(key,'generation','startup'))
         before=store.get(key,'source_baseline')
-        after=observe(root);changed=changes(before,after) if before else []
-        before=before or {'files':{},'complete':False}
         edit_attempt=store.get(key,'edited_in_turn')==current_generation
-        if meta.get('crew_enabled') and meta.get('read_only') and not edit_attempt:
+        reader=meta.get('crew_enabled') and meta.get('read_only') and not edit_attempt
+        # Only read-only crew handbacks skip this observation; their final
+        # references/snapshots are still byte-validated by the crew engine.
+        after=({'files':{},'complete':False,'reason':'read_only_shared_scope'} if reader else observe(root))
+        changed=changes(before,after) if before else []
+        before=before or {'files':{},'complete':False}
+        if reader:
             # Changes by the root/other workers in a shared read-only checkout
             # are not evidence that this reader wrote them. Final snapshots bind reviews.
             changed=[]
@@ -411,12 +502,16 @@ class Hooks:
                     task=evidence._get(db,'task',{})
                 for spec in task.get('checks',[]):
                     for n in changed:
-                        if any(n==d or n.startswith(d.rstrip('/')+'/') for d in spec['dependencies']+spec.get('expected_absent',[])):covered.add(n)
+                        if any(covers(root,d,n) for d in spec['dependencies']+spec.get('expected_absent',[])):covered.add(n)
             except (OSError,ValueError,TypeError,KeyError, __import__('sqlite3').Error):
                 problem='verification record unreadable; no success can be asserted'
         if meta.get('read_only') and changed:problem='read-only worker modified files; leader must review and restore its own changes safely'
         matching=store.get(key,'finish_generation')==current_generation
         tested=bool(claim and matching and claim['kind']=='tested' and claim.get('valid') and status and status.get('passed'))
+        if tested and not (meta.get('crew_enabled') and meta.get('read_only') and not edit_attempt):
+            from .scan import completeness_problem
+            coverage_problem=completeness_problem(before,after)
+            if coverage_problem:tested=False;problem=coverage_problem
         if tested and set(changed)-covered:
             tested=False;problem='changed files are outside declared verification dependencies'
         team=Team(store)
@@ -457,6 +552,9 @@ class Hooks:
         if not status or not status.get('active'):coordinator.release(key)
         if outstanding and accepted=='ANALYSIS':
             return {'systemMessage':'LunAstra: existing work remains outstanding; this reply is not completion of that work.'}
+        if not outstanding and accepted in {'TESTED','ANALYSIS'} and not reader:
+            store.put(key,'source_baseline',after)
+            store.put(key,'changed-path-hints',[])
         if accepted in {'PARTIAL','BLOCKED'}:
             return {'systemMessage':'LunAstra: '+accepted+' — '+str(claim.get('limitations','Verification remains incomplete.'))[:500]}
         return {}

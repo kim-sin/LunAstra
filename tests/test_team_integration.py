@@ -101,10 +101,9 @@ class TeamIntegrationTests(unittest.TestCase):
         self.helper(self.root_prefix,['team-integrate','repair'])
         self.assertIn('x+y',(self.ws/'app.py').read_text())
 
-    def test_installed_gate_recognizes_reserve_without_changing_model(self):
+    def test_installed_gate_rejects_ambiguous_reserve_without_changing_model(self):
         output=self.hook({**self.event,'model':'gpt-reserve','session_id':'reserve'})
-        prefix=self.prefix(output)
-        result=self.helper(prefix,['status']);self.assertEqual(result['session']['model'],'gpt-reserve')
+        self.assertEqual({},output)
 
     def test_same_version_update_preserves_foreign_hooks_and_state(self):
         # A content-addressed same-version reinstall is idempotent and retains

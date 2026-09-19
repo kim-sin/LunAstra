@@ -14,6 +14,7 @@ from .store import Store, evidence_directory
 from .team import Team, TICKET, text, plan_definition, unpack_response
 from .util import HarnessError, canonical, strict_json, json_hash, inside, file_hash, no_symlinks
 from .coordination import normalized, overlaps
+from .paths import covers as path_covers, uncovered
 from .evidence import Evidence
 from .jobs import Jobs
 from .scan import observe
@@ -54,7 +55,7 @@ def _get(db, owner):
     if not r:
         return None
     s = strict_json(r[0])
-    if (not isinstance(s, dict) or s.get('schema') != 1 or
+    if (not isinstance(s, dict) or s.get('schema') not in {1,2} or
             s.get('phase') not in {'PLAN', 'EXECUTE', 'REVIEW', 'COMPLETE'} or
             not isinstance(s.get('round'), int) or s['round'] < 1 or
             not re.fullmatch('[a-f0-9]{32}', str(s.get('run_id', '')))):
@@ -105,8 +106,9 @@ class Crew:
     def __init__(self, store: Store, package: Path):
         self.store = store; self.package = Path(package)
         self.team = Team(store)
-        with store.db() as db:
-            db.executescript(SCHEMA)
+        from .blockers import install
+        install(store)
+        store.ensure_schema('crew', SCHEMA)
 
     def _root(self, owner):
         meta = self.store.get(owner, 'meta', {})
@@ -164,11 +166,54 @@ class Crew:
         return result
 
     def read_report(self, owner, slot):
+        self._root(owner)
         if type(slot) is not int or not 1<=slot<=6:raise HarnessError('slot must be 1..6')
         s=self.status(owner)
         if not s['configured']:raise HarnessError('no fixed crew')
         row=next(r for r in s['tasks'] if r['id']==f's{slot}')
-        return {'task':row['spec'],'handback':row['result'],'report':s['reports'].get(row['ticket'])}
+        report=s['reports'].get(row['ticket'])
+        self.deliver_reports(owner,s,[row])
+        return {'task_id':row['id'],'ticket':row['ticket'],'report':report,
+                'delivery_recorded':report is not None,'model_comprehension':'NOT_MEASURED'}
+
+    def deliver_reports(self, owner, state, tasks=None):
+        self._root(owner)
+        from .report_access import delivered
+        with self.store.db(True) as db:
+            if _get(db,owner)['plan_id']!=state['plan_id']:raise HarnessError('crew round changed during report retrieval')
+            for row in state['tasks'] if tasks is None else tasks:
+                delivered(db,owner,state,row['ticket'],state['reports'].get(row['ticket']))
+
+    def pending_report_details(self, owner, state=None):
+        self._root(owner)
+        from .report_access import missing
+        s=state or self.status(owner)
+        with self.store.db() as db:return missing(db,owner,s)
+
+    def require_report_details(self, owner, state=None, task_id=None):
+        self._root(owner)
+        s=state or self.status(owner)
+        from .report_access import require
+        tasks=None if task_id is None else [r for r in s['tasks'] if r['id']==task_id]
+        with self.store.db() as db:require(db,owner,s,tasks)
+
+    def capacity(self, owner, data):
+        s,_=self._current(owner)
+        from .native import configuration, capacity_problem
+        if not isinstance(data,dict) or set(data)!={'capacity_total','evidence'}:
+            raise HarnessError('capacity observation needs capacity_total and its actual host evidence')
+        evidence=text(data['evidence'],'actual host capacity evidence',2000)
+        profile=configuration({**configuration(s.get('native'),legacy=True),'capacity_total':data['capacity_total']})
+        if profile['protocol']!='v2':raise HarnessError('capacity_total annotation is only for V2')
+        with self.store.db(True) as db:
+            current=_get(db,owner)
+            if current['plan_id']!=s['plan_id']:raise HarnessError('crew round changed')
+            current['native']=profile;_put(db,owner,current)
+            db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',
+                       (owner,'native-capacity-observation',canonical({'capacity_total':profile['capacity_total'],
+                         'evidence':evidence,'at':time.time(),'independently_attested':False})))
+        return {'capacity_total':profile['capacity_total'],'problem':capacity_problem(current),
+                'settings_changed':False,'existing_workers_unchanged':True,'independently_attested':False}
 
     def _definition(self, owner, root, goal, tasks):
         return plan_definition(root, {'goal': goal, 'parallel_limit': 6, 'launch_limit': 6, 'tasks': tasks},
@@ -197,8 +242,14 @@ class Crew:
 
     def start(self, owner, spec, *, revise=False):
         root, meta = self._root(owner)
-        if not isinstance(spec,dict) or set(spec) != {'goal','requirements','evidence_paths','output_paths'}:
-            raise HarnessError('crew-start needs goal, requirements, evidence_paths, output_paths')
+        required={'goal','requirements','evidence_paths','output_paths'}
+        if not isinstance(spec,dict) or not required <= set(spec) or set(spec)-required-{'resources','expected_workspace','mode','native'}:
+            raise HarnessError('crew-start needs goal, requirements, evidence_paths, output_paths; optional resources/expected_workspace/mode')
+        if spec.get('mode','task') not in {'task','research'}:
+            raise HarnessError('mode must be task or research')
+        from .native import configuration, require_capacity
+        native=configuration(spec.get('native'))
+        require_capacity({'native':native})
         goal = text(spec['goal'], 'goal')
         requirements = spec['requirements']
         if not isinstance(requirements,list) or not 1 <= len(requirements) <= 64:
@@ -215,23 +266,41 @@ class Crew:
             if any(n == '.' or n.split('/')[0] in {'.git','.codex','.agents'} for n in scopes[field]):
                 raise HarnessError('declare narrow non-control file or directory scopes')
             for n in scopes[field]:inside(root,n)
+        from .prepare import prepare
+        resources=spec.get('resources',{})
+        if not isinstance(resources,dict):raise HarnessError('resources must be an object')
+        resources={**resources, 'required_inputs':resources.get('required_inputs',scopes['evidence_paths']),
+                   'outputs':resources.get('outputs',scopes['output_paths'])}
+        registry=prepare(root,resources,expected_workspace=spec.get('expected_workspace'))
+        if set(registry['roles']['required_inputs'])-set(scopes['evidence_paths']):
+            raise HarnessError('required inputs must be registered in evidence_paths')
+        if set(registry['roles']['outputs'])!=set(scopes['output_paths']):
+            raise HarnessError('resource outputs must match the locked output_paths')
+        # Every declared evidence path is a required source, except a path
+        # explicitly marked optional. Required/optional roles cannot conflict.
+        optional=set(registry['roles']['optional_inputs'])
+        if optional & set(registry['roles']['required_inputs']):raise HarnessError('source has conflicting input roles')
+        uncovered_inputs=set(scopes['evidence_paths'])-set(registry['roles']['required_inputs'])-optional
+        if uncovered_inputs:raise HarnessError('unclassified evidence inputs: '+', '.join(sorted(uncovered_inputs)))
         definition = self._definition(owner,root,goal,self._tasks(PLAN_LENSES,scopes['evidence_paths']))
         request_hash = self.store.get(owner,'request_hash')
         if not request_hash:
             request_hash=json_hash(goal);self.store.put(owner,'request_hash',request_hash)
-        s = {'schema':1,'run_id':uuid.uuid4().hex,'phase':'PLAN','round':1,'goal':goal,
+        s = {'schema':2,'run_id':uuid.uuid4().hex,'phase':'PLAN','round':1,'goal':goal,
              'requirements':requirements,**scopes,'request_hash':request_hash,'model':meta['model'],
-             'created_at':time.time(),'ever_wrote':[]}
+             'created_at':time.time(),'ever_wrote':[],'native':native,'mode':spec.get('mode','task'),'resource_registry_hash':registry['registry_hash'],'resource_roles':registry['roles']}
         self._idle(owner)
         with self.store.db(True) as db:
             old = _get(db,owner)
             if old and old['phase'] != 'COMPLETE' and not revise:
-                if all(old[k]==s[k] for k in ('goal','requirements','evidence_paths','output_paths','request_hash')):
+                if all(old.get(k)==s[k] for k in ('goal','requirements','evidence_paths','output_paths','request_hash','mode','resource_roles','native')):
                     return self.summary(owner)
                 raise HarnessError('active contract exists; settle running work and use crew-revise explicitly')
             plan = self.team._status(db,owner)
             if plan['configured'] and any(r['state'] in {'reserved','running'} for r in plan['tasks']):
                 raise HarnessError('preserve running workers before starting/revising')
+            if old and configuration(old.get('native'),legacy=True)['protocol']!=native['protocol'] and any(r[0] for r in db.execute('SELECT agent_id FROM crew_members WHERE owner=?',(owner,))):
+                raise HarnessError('keep the existing crew wire protocol; use a new root for a different host protocol')
             if old:
                 db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'crew-history:'+old['run_id'],canonical(old)))
                 db.execute("UPDATE work SET state='abandoned' WHERE owner=? AND plan_id=? AND state NOT IN ('accepted','abandoned')",(owner,old['plan_id']))
@@ -239,6 +308,7 @@ class Crew:
                 raise HarnessError('finish the previous dynamic team before enabling fixed seven')
             for i in range(1,7):
                 db.execute('INSERT OR IGNORE INTO crew_members(owner,slot) VALUES(?,?)',(owner,i))
+            db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'resource_registry',canonical(registry)))
             self._round(db,owner,s,definition)
         return self.summary(owner)
 
@@ -329,20 +399,36 @@ class Crew:
                     db.execute('UPDATE work SET spec=? WHERE ticket=?',(canonical(fallback),row['ticket']))
                     db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'crew-fallback:'+row['ticket'],canonical(str(exc)[:1000])))
         s=self.status(owner);calls=[]
+        from .native import capsule_ready, target
+        warmup=not capsule_ready(self.store,owner,s)
+        with self.store.db() as db:
+            unresolved_warmup=db.execute("SELECT 1 FROM dispatches WHERE owner=? AND state IN ('pending','running','unknown') LIMIT 1",(owner,)).fetchone()
+        if warmup and (unresolved_warmup or any(target(self.store,owner,m['slot'],m['agent_id']) for m in s['members'])):
+            return {'calls':[],'required_total':7,'observed_children':s['observed_children'],
+                    'waiting_for':'first current Luna worker hook and crew-join; no extra model probe'}
         members={m['slot']:m for m in s['members']}
         for row in s['tasks']:
             if row['state']!='reserved':continue
+            if warmup and calls:break
             with self.store.db() as db:
                 exists=db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','running','unknown')",(row['ticket'],)).fetchone()
             if exists:continue
             slot=int(row['id'][1:]);member=members[slot]
             task=row['spec']
             capsule={'goal':s['goal'],'requirements':s['requirements'],'phase':s['phase'],'round':s['round'],
-                     'slot':slot,'job':task,'decision':s.get('decision'),'review_snapshot':s.get('review_snapshot',{}).get('sha256')}
+                     'slot':slot,'job':task,'decision':s.get('decision'),
+                     'resource_roles':s.get('resource_roles',{}),
+                     'review_snapshot':s.get('review_snapshot',{}).get('sha256')}
+            from .native import configuration
+            if configuration(s.get('native'),legacy=True)['context']=='capsule':
+                capsule={'phase':s['phase'],'round':s['round'],'slot':slot,
+                         'assignment_sha256':json_hash(capsule),
+                         'assignment_source':'crew-join '+row['ticket'],
+                         'note':'The joined contract supplies full goal, requirements, decision and source paths before any work.'}
             message='LUNASTRA_TICKET='+row['ticket']+'\n'+canonical(capsule)+'\nFirst run LOCAL_HELPER_COMMAND + crew-join '+row['ticket']+'. Do not act on a previous ticket. Use crew-report for source-linked findings, then finish your handback. No new model workers.'
             if len(message)>24000:raise HarnessError('task capsule exceeds 24000 characters; use concise obligations and source paths')
-            name='send_input' if member['agent_id'] else 'spawn_agent'
-            args={'target':member['agent_id'],'message':message,'interrupt':False} if member['agent_id'] else {'message':message,'fork_context':True}
+            from .native import dispatch, target
+            name,args=dispatch(s,slot,message,target(self.store,owner,slot,member['agent_id']))
             calls.append({'slot':slot,'ticket':row['ticket'],'tool':name,'arguments':args,
                           'native_schema_note':'Use the matching native tool actually exposed by the host; never model/effort/role overrides.',
                           'fallback':self.store.get(owner,'crew-fallback:'+row['ticket'])})
@@ -362,8 +448,7 @@ class Crew:
         if any(payload.get(n) is not None for n in ('model','reasoning_effort','service_tier','agent_type')):
             raise HarnessError('inherit selected Luna and effort; no model/effort/custom-role override')
         if payload.get('interrupt'):raise HarnessError('do not interrupt fixed-crew work')
-        if kind=='spawn_agent' and not (payload.get('fork_context') is True or ('task_name' in payload and payload.get('fork_turns','all')=='all')):
-            raise HarnessError('initial workers require a full inherited fork')
+
         with self.store.db(True) as db:
             current=_get(db,owner)
             if current['plan_id']!=s['plan_id']:raise HarnessError('crew round changed')
@@ -381,10 +466,8 @@ class Crew:
             if strict_json(row['spec'])['kind']=='implement' and not row['workspace']:raise HarnessError('prepare the assigned checkout with crew-next before dispatch')
             if db.execute("SELECT 1 FROM dispatches WHERE ticket=? AND state IN ('pending','running','unknown')",(ticket,)).fetchone():
                 raise HarnessError('native dispatch unresolved; do not duplicate it')
-            if member['agent_id']:
-                if kind!='send_input' or payload.get('target')!=member['agent_id'] or 'id' in payload:
-                    raise HarnessError('reuse the bound native ID with send_input; no replacement agent')
-            elif kind!='spawn_agent':raise HarnessError('this slot has no observed native agent yet')
+            from .native import target_in, validate_dispatch
+            validate_dispatch(s,member['slot'],kind,payload,target_in(db,owner,member['slot'],member['agent_id']))
             if member['agent_id']:db.execute('UPDATE work SET agent_id=? WHERE ticket=?',(member['agent_id'],ticket))
             db.execute('INSERT INTO crew_calls VALUES(?,?,?,?,?)',(owner,call_id,ticket,kind,json_hash(payload)))
             db.execute('INSERT INTO dispatches VALUES(?,?,?,?)',(owner,call_id,ticket,'pending'))
@@ -401,18 +484,25 @@ class Crew:
             current=_get(db,owner)
             if not current or row['plan_id']!=current['plan_id']:raise HarnessError('late dispatch result belongs to a prior round')
             member=db.execute('SELECT * FROM crew_members WHERE owner=? AND slot=?',(owner,int(row['id'][1:]))).fetchone()
+            from .native import is_v2, spawn_target, followup_ack, target_in
             if call['kind']=='spawn_agent':
-                agent=result.get('agent_id')
-                good=isinstance(agent,str) and 0<len(agent)<=4096
+                handle=spawn_target(current,member['slot'],response)
+                agent=None if is_v2(current) else handle
+                good=bool(handle)
             else:
+                handle=target_in(db,owner,member['slot'],member['agent_id'])
                 agent=member['agent_id']
-                # Codex send_input returns a submission ID. A prose response is not acknowledgement.
-                good=bool(agent and isinstance(result.get('submission_id'),str) and result['submission_id'])
+                good=bool(handle and followup_ack(current,response))
             error=isinstance(response,dict) and (response.get('isError') is True or response.get('is_error') is True)
             if not good or error:
                 db.execute("UPDATE dispatches SET state='unknown' WHERE owner=? AND call_id=?",(owner,call_id))
                 return
-            if call['kind']=='spawn_agent':
+            if call['kind']=='spawn_agent' and is_v2(current):
+                for other in db.execute("SELECT name,value FROM kv WHERE name LIKE 'native-target:%'"):
+                    old_target=strict_json(other['value'])
+                    if old_target.get('target')==handle:raise HarnessError('canonical V2 target already bound')
+                db.execute('INSERT OR REPLACE INTO kv VALUES(?,?,?)',(owner,'native-target:'+str(member['slot']),canonical({'target':handle,'call_id':call_id,'protocol':'v2'})))
+            if call['kind']=='spawn_agent' and not is_v2(current):
                 taken=db.execute('SELECT owner,slot FROM crew_members WHERE agent_id=?',(agent,)).fetchone()
                 if taken and (taken['owner']!=owner or taken['slot']!=member['slot']):
                     raise HarnessError('one native agent cannot occupy two crew slots')
@@ -422,6 +512,7 @@ class Crew:
             db.execute("UPDATE dispatches SET state='running' WHERE owner=? AND call_id=?",(owner,call_id))
         # A confirmed spawn can establish native-child identity even on a host
         # that does not emit SubagentStart. Actual worker model is rechecked on join.
+        if agent is None:return  # V2 canonical name is not a runtime UUID.
         root,meta=self._root(owner)
         alias=self.store.get('__agent_alias__',agent)
         if not alias:
@@ -436,8 +527,19 @@ class Crew:
         if not row:raise HarnessError('unknown crew ticket')
         s=self.status(row['owner'])
         if not s['configured'] or row['plan_id']!=s['plan_id']:raise HarnessError('stale crew ticket')
+        from .native import configuration
+        if configuration(s.get('native'),legacy=True)['context']=='capsule' and meta.get('native_model_observed')!=s['model']:
+            raise HarnessError('fresh-context member requires its actual current Luna hook; no inherited placeholder identity',code='NATIVE_MODEL_PENDING')
         with self.store.db() as db:
             member=db.execute('SELECT * FROM crew_members WHERE owner=? AND slot=?',(row['owner'],int(row['id'][1:]))).fetchone()
+        from .native import bind_worker
+        if member and not member['agent_id']:
+            with self.store.db(True) as db:
+                fresh=db.execute('SELECT * FROM crew_members WHERE owner=? AND slot=?',(row['owner'],member['slot'])).fetchone()
+                current=_get(db,row['owner'])
+                if current['plan_id']!=s['plan_id']:raise HarnessError('crew round changed')
+                bind_worker(self.store,db,row['owner'],s,row,fresh,key,meta)
+                member=db.execute('SELECT * FROM crew_members WHERE owner=? AND slot=?',(row['owner'],member['slot'])).fetchone()
         if not member or not member['agent_id'] or member['agent_id']!=meta.get('agent_id'):
             raise HarnessError('wait for the actual dispatch acknowledgement; retry this same ticket')
         with self.store.db() as db:
@@ -455,11 +557,16 @@ class Crew:
               crew_round=s['round'],evidence_key=json_hash([key,ticket]))
         self.store.put(key,'meta',meta)
         if not same_assignment:
-            self.store.put(key,'source_baseline',observe(Path(result['workspace'])))
+            if meta.get('read_only'):
+                self.store.put(key,'source_baseline',{'files':{},'complete':False,'reason':'read_only_shared_scope',
+                    'root_owner':row['owner'],'plan_id':s['plan_id'],'resource_registry_hash':s.get('resource_registry_hash'),
+                    'review_snapshot':s.get('review_snapshot',{}).get('sha256')})
+            else:self.store.put(key,'source_baseline',observe(Path(result['workspace'])))
             self.store.put(key,'finish_generation',None)
         with self.store.db(True) as db:
             db.execute('UPDATE crew_members SET worker_key=? WHERE owner=? AND slot=?',(key,row['owner'],member['slot']))
         return {**result,'phase':s['phase'],'goal':s['goal'],'requirements':s['requirements'],
+                'decision':s.get('decision'),'resource_roles':s.get('resource_roles',{}),
                 'review_snapshot':{'sha256':s.get('review_snapshot',{}).get('sha256'),'paths':s.get('review_paths',[])},'report_schema':{
                     'verdict':'clear | issues | blocked','summary':'Concise evidence-based conclusion',
                     'findings':['Specific issue, or explicit no issue within the inspected scope'],
@@ -473,8 +580,12 @@ class Crew:
             raise HarnessError('report requires your current joined running assignment')
         s,root=self._current(row['owner'])
         if row['plan_id']!=s['plan_id']:raise HarnessError('old assignment report')
-        if not isinstance(data,dict) or set(data)!={'verdict','summary','findings','references','covers'}:
+        fields={'verdict','summary','findings','references','covers'}
+        if not isinstance(data,dict) or not fields<=set(data) or set(data)-fields-{'blocker_kind'}:
             raise HarnessError('invalid crew-report fields')
+        from .blockers import KINDS
+        if 'blocker_kind' in data and (data['verdict']!='blocked' or data['blocker_kind'] not in KINDS):
+            raise HarnessError('blocker_kind requires a blocked report and a supported classification')
         if data['verdict'] not in {'clear','issues','blocked'}:raise HarnessError('invalid report verdict')
         summary=text(data['summary'],'report summary',4000)
         findings=data['findings']
@@ -496,10 +607,16 @@ class Crew:
                 p=inside(ws,ref['path'])
                 if not p.is_file():raise HarnessError('source reference must be an existing regular file')
                 scopes=row and strict_json(row['spec'])['paths']
-                if not any(ref['path']==n or ref['path'].startswith(n.rstrip('/')+'/') for n in scopes):
+                if not any(path_covers(ws,n,ref['path']) for n in scopes):
                     raise HarnessError('reference is outside the assigned source scope')
                 checked.append({'path':ref['path'],'sha256':file_hash(p)})
-            else:raise HarnessError('reference accepts path or requirement index only')
+            elif set(ref)=={'missing_path'} and data['verdict']=='blocked':
+                path=ref['missing_path'];p=inside(ws,path)
+                if p.exists():raise HarnessError('missing_path exists; report current evidence instead')
+                if not any(path_covers(ws,n,path) for n in strict_json(row['spec'])['paths']):
+                    raise HarnessError('missing reference is outside the assigned source scope')
+                checked.append({'missing_path':path,'missing':True})
+            else:raise HarnessError('reference accepts path, requirement, or a missing_path on a blocked report')
         if s['phase']=='REVIEW':
             if fingerprint(root,s['review_paths'])['sha256']!=s['review_snapshot']['sha256']:
                 raise HarnessError('final artifact changed; start a fresh review round')
@@ -509,19 +626,29 @@ class Crew:
         body={'ticket':ticket,'worker_key':key,'run_id':s['run_id'],'round':s['round'],'phase':s['phase'],
               'verdict':data['verdict'],'summary':summary,'findings':findings,'references':checked,'covers':covers,
               'snapshot':s.get('review_snapshot',{}).get('sha256'),'model_review_is_not_test_execution':True}
+        if data['verdict']=='blocked':body['blocker_kind']=data.get('blocker_kind','VERIFICATION_INCOMPLETE')
         if len(canonical(body))>12000:raise HarnessError('report exceeds 12000 characters; retain full evidence in files and reference it')
+        from .blockers import source_record, store_source, record_blocker, resolve_by_report
+        dependency_paths=(strict_json(row['spec'])['paths'] if data['verdict']=='blocked' else
+                          [r['path'] for r in checked if 'path' in r])
+        source=source_record(ws,dependency_paths,s['requirements'],body)
         with self.store.db(True) as db:
             cur=_get(db,row['owner'])
             if cur['plan_id']!=s['plan_id']:raise HarnessError('crew round changed')
             db.execute('INSERT INTO crew_reports VALUES(?,?,?,?) ON CONFLICT(ticket) DO UPDATE SET body=excluded.body,at=excluded.at',
                        (ticket,key,canonical(body),time.time()))
-        return {'recorded':True,'native_handback_still_required':True,'phase':s['phase']}
+            store_source(db,ticket,source)
+            if data['verdict']=='blocked':record_blocker(db,row['owner'],ticket,body,source,body['blocker_kind'])
+            else:resolve_by_report(db,row['owner'],ticket,body)
+        return {'recorded':True,'native_handback_still_required':True,'phase':s['phase'],
+                'source_freshness':'OBSERVED' if source['fingerprint'] is not None else 'UNKNOWN'}
 
     def _returned(self, owner, s, *, clear=False, repairing=False):
         self._idle(owner)
         if s['observed_children']!=6 or len({m['agent_id'] for m in s['members']})!=6:
             raise HarnessError('all six distinct native children are required; no smaller-crew success')
         if len(s['tasks'])!=6:raise HarnessError('invalid six-slot round')
+        self.require_report_details(owner,s)
         for row in s['tasks']:
             report=s['reports'].get(row['ticket']);hb=row['result'] or {}
             if repairing:
@@ -549,6 +676,8 @@ class Crew:
                 raise HarnessError('checked implementation integration is still required')
 
     def _accept_round(self, db, owner, s, decision, repairing=False):
+        from .report_access import require
+        require(db,owner,s)
         for row in s['tasks']:
             hb={**(row['result'] or {}),'leader_review':decision}
             state='abandoned' if repairing and (hb.get('status') not in {'ANALYSIS','TESTED'} or s['reports'].get(row['ticket'],{}).get('verdict')!='clear' or (row['spec']['kind']=='implement' and not hb.get('integrated'))) else 'accepted'
@@ -565,7 +694,7 @@ class Crew:
         if {t['id'] for t in tasks}!={f's{i}' for i in range(1,7)}:raise HarnessError('execution requires exactly s1..s6, reused across rounds')
         for t in tasks:
             if t['id'] in {'s5','s6'} and t['kind']=='implement':raise HarnessError('slots 5 and 6 remain independent read-only reviewers')
-            if t['kind']=='implement' and any(not any(p==o or p.startswith(o.rstrip('/')+'/') for o in s['output_paths']) for p in t['paths']):
+            if t['kind']=='implement' and any(not any(path_covers(root,o,p) for o in s['output_paths']) for p in t['paths']):
                 raise HarnessError('implementation exceeds the locked output scope')
         self._returned(owner,s,repairing=repair)
         with self.store.db(True) as db:
@@ -578,15 +707,34 @@ class Crew:
 
     def _root_evidence(self, owner, s, require_finish=False):
         if Jobs(self.store,owner,self.package).active():raise HarnessError('root check controller is active')
+        if s.get('mode')=='research':
+            from .research import Research
+            study=Research(self.store,owner,self.package).status()
+            if study.get('configured') and (study['state'] in {'RUNNING','STARTING','PAUSING'} or study['counts']['RUNNING']):
+                raise HarnessError('pause and drain local research before a frozen checkpoint review',code='RESEARCH_ACTIVE')
+            if require_finish and study.get('configured') and study['state']!='FINISHED':
+                raise HarnessError('explicitly finish the study before final crew completion; checkpoints can resume')
         ev=Evidence(evidence_directory(self.store.directory,owner));status=ev.status()
         with ev._db() as db:task=ev._get(db,'task')
         if not task or task['requirements']!=s['requirements']:
             raise HarnessError('root checks must cover the exact locked requirement list')
         if not status.get('passed'):raise HarnessError('current root acceptance checks are required')
         dependencies=sorted(set(p for c in task['checks'] for p in c['dependencies']+c.get('expected_absent',[])))
-        for output in s['output_paths']:
-            if not any(output==d or output.startswith(d.rstrip('/')+'/') for d in dependencies):
-                raise HarnessError('declared output lacks root verification coverage: '+output)
+        root, _ = self._root(owner)
+        missing = uncovered(root, s['output_paths'], dependencies)
+        if missing:
+            raise HarnessError('declared output lacks root verification coverage: '+', '.join(missing),
+                               code='OUTPUT_COVERAGE_MISSING', details={'paths':missing})
+        # Use the same completion predicate as Stop; COMPLETE must not disagree
+        # with the hook about unverified changes. Never ignore unknown changes.
+        baseline = self.store.get(owner, 'source_baseline')
+        from .scan import changes, require_complete
+        after=observe(root)
+        require_complete(baseline,after)
+        unverified = uncovered(root, changes(baseline,after), dependencies)
+        if unverified:
+            raise HarnessError('changed files are outside declared verification dependencies: '+', '.join(unverified),
+                               code='CHANGED_PATH_UNVERIFIED', details={'paths':unverified})
         if require_finish:
             finish=status.get('finish') or {}
             if finish.get('kind')!='tested' or not finish.get('valid') or self.store.get(owner,'finish_generation')!=self.store.get(owner,'generation'):
@@ -597,6 +745,11 @@ class Crew:
         s,root=self._current(owner)
         if s['phase'] not in {'EXECUTE','REVIEW'}:raise HarnessError('review follows execution')
         decision=text(decision,'review decision',8000)
+        if s['phase']=='REVIEW':
+            evidence,_=self._root_evidence(owner,s)
+            if (fingerprint(root,s['review_paths'])['sha256']==s['review_snapshot']['sha256'] and
+                    evidence.get('task_hash')==s['review_task_hash']):
+                return {**self.summary(owner),'review_reused':True}
         self._returned(owner,s)
         evidence,deps=self._root_evidence(owner,s)
         paths=sorted(set(s['evidence_paths']+s['output_paths']+deps))
@@ -612,6 +765,10 @@ class Crew:
 
     def complete(self, owner, decision):
         s,root=self._current(owner)
+        if s['phase']=='COMPLETE':
+            problem=self.completion_problem(owner)
+            if problem:raise HarnessError(problem)
+            return {**self.summary(owner),'completion_reused':True}
         if s['phase']!='REVIEW':raise HarnessError('six independent final reports are required before completion')
         decision=text(decision,'final evidence-based synthesis',8000)
         self._returned(owner,s,clear=True)
@@ -645,6 +802,10 @@ class Crew:
         s,_=self._current(owner)
         if s['phase']!='EXECUTE':raise HarnessError('work is read-only until the six-member plan is reviewed, and during final review')
         if s['observed_children']!=6:raise HarnessError('fixed seven requires six observed native child identities')
+        registry=self.store.get(owner,'resource_registry',{})
+        protected=registry.get('roles',{}).get('protected',[])
+        if any(any(path_covers(self._root(owner)[0],p,o) or path_covers(self._root(owner)[0],o,p) for p in protected) for o in s['output_paths']):
+            raise HarnessError('current output scope overlaps protected resources')
         return s['output_paths']
 
 

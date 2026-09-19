@@ -1,5 +1,15 @@
 # Disable, remove, and recover
 
+
+## 4.1 model-scope lifecycle
+
+See [MODEL_SCOPE.md](MODEL_SCOPE.md) for the exact gate policy, bounded diagnostic commands and the separate live acceptance matrix. Hook registration is not activation; an emitted kernel is not proof of Desktop consumption or currently running workers.
+
+Unregister disables future **owned** hook injections in the selected home only. Already injected conversation context is **NOT RETRACTED**. Model switching may retain old text, especially from pre-4.1 builds. Use a new conversation for clean non-Luna work; do not delete state or terminate workers to fix context. Re-registering does not erase history. Existing v3/v4 records and unrelated hooks are preserved.
+
+Bare `gpt-reserve` is UNKNOWN/fail-closed pending a proven Luna discriminator. Do not infer the selected model from prompt words, a UI label or a PATH CLI version. The optional `--isolated` home is a targeted installation, **not live-verified Desktop/IDE routing**. Check additional project/managed hook sources separately; changing a home cannot prove that every other injection source is absent.
+
+
 ## Disable without losing work
 
 Run `UNREGISTER.cmd` on Windows, or `python3 install.py unregister` from the extracted distribution on macOS/Linux. This removes only hook handlers owned by the installation record. It preserves installed releases, worktree copies, notes, logs, verification data and backups.
@@ -44,4 +54,7 @@ To roll back, run `INSTALL.cmd` from a retained earlier distribution, review its
 
 Finish active dynamic work using its matching distribution. New observed root sessions load fixed-seven; existing persisted roots retain their prior mode. Do not roll an active fixed-seven run back to the earlier dynamic implementation. Finish or explicitly preserve its incomplete work first, then use a new session with the selected distribution.
 
-Each reused worker assignment stores its own flat evidence context under `state-v3/sessions`. Purge checks include those contexts, not just the latest worker ticket. JSON input buffers, source-linked reports and crew history can contain project data and are part of owned local state.
+Each reused worker assignment stores its own flat evidence context under `state-v4/sessions` (old `state-v3` is retained). Purge checks include those contexts, not just the latest worker ticket. Owner-bound JSON request blobs, research queues and logs, JSON input buffers, source-linked reports and crew history can contain project data and are part of owned local state.
+
+
+Model-gate captures are preserved by unregister. Only the existing explicit, confirmed, idle data-removal operation can remove these owned diagnostic files. A diagnostic arm marker or control operation blocks purge until diagnostics are stopped. This is lifecycle compatibility, not a recommended remedy for contaminated context; do not use purge for model-switch problems.

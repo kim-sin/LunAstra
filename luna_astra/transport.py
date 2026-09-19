@@ -15,29 +15,22 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .util import HarnessError, inside, no_symlinks
+from .util import HarnessError, inside, no_symlinks, stat_identity
 
-_AGENT_TOOLS = {'spawn_agent', 'wait_agent', 'send_input', 'close_agent', 'resume_agent'}
+_AGENT_TOOLS = {'spawn_agent', 'wait_agent', 'send_input', 'close_agent', 'resume_agent', 'followup_task', 'send_message', 'interrupt_agent', 'list_agents'}
 _HELPERS = {
     'help', 'context', 'risk', 'begin', 'run', 'run-all', 'status', 'finish',
     'note', 'trace', 'claim', 'release', 'team-join', 'jobs', 'start-check',
-    'worker-exec', 'read', 'input-append', 'crew-join', 'crew-report',
-    'crew-start','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
+    'worker-exec', 'read', 'read-bytes', 'read-source', 'resources', 'input-append', 'crew-join', 'crew-report',
+    'crew-step','research-configure','research-enqueue','research-status','research-start','research-recover','research-pause','research-finish','research-wait','research-cancel','research-resume','research-policy','research-read',
+    'crew-start','crew-capacity','crew-revise','crew-continue','crew-next','crew-state','crew-drive','crew-recover','crew-report-read','crew-execute','crew-repair','crew-review','crew-complete',
 }
 
 
 def tool_name(value: str) -> str:
-    # Codex flattens multi_agent_v1 + name without a separator. Do not match
-    # arbitrary MCP tools just because their names end in a familiar word.
-    if value.startswith('multi_agent_v1'):
-        suffix = value[len('multi_agent_v1'):]
-        if suffix in _AGENT_TOOLS:
-            return suffix
-    if value.startswith('functions.'):
-        suffix = value[len('functions.'):]
-        if suffix in _AGENT_TOOLS | {'apply_patch', 'exec_command', 'shell_command'}:
-            return suffix
-    return value
+    # Shared with the cheap hook selector, including supported functions.* edits.
+    from .hook_policy import canonical_tool
+    return canonical_tool(value)
 
 
 def helper_command(argv: list[str], *, windows: bool | None = None) -> str:
@@ -101,10 +94,22 @@ def literal_shell_input(command: str, prefix: list[str], *, windows: bool | None
     if literal_argv(command)[:len(prefix)] != prefix:
         raise HarnessError('helper must use its own literal command prefix')
     windows = os.name == 'nt' if windows is None else windows
-    if not windows:
-        return None
     argv = literal_argv(command)
+    original_argv = list(argv)
+    rest = argv[len(prefix):]
+    if rest[:1] == ['--input-json'] and len(rest) >= 3 and len(rest[1].encode('utf-8')) > 1000:
+        from .requests import put
+        try:
+            state = Path(prefix[prefix.index('--state')+1])
+            owner = prefix[prefix.index('--session')+1]
+        except (ValueError, IndexError) as exc:
+            raise HarnessError('large request requires the observed state and session') from exc
+        reference = put(state, owner, rest[1])
+        argv = prefix + ['--input-ref', reference] + rest[2:]
+    if not windows:
+        return {'command':helper_command(argv,windows=False)} if argv != original_argv else None
     quote = lambda s: "'" + s.replace("'", "''") + "'"
+
     script = (
         "$ErrorActionPreference='Stop'; "
         "$p=New-Object System.Diagnostics.Process; "
@@ -164,21 +169,67 @@ def worker_exec(meta: dict, argv: list[str], relative_cwd: str = '.') -> dict:
 
 
 def read_source(root: Path, path: str, start_line: int = 1, max_lines: int = 400) -> dict:
-    """Read-only navigation for delegates without granting arbitrary execution."""
+    """Read a bounded line window without loading a multi-megabyte file."""
     if type(start_line) is not int or start_line<1 or type(max_lines) is not int or not 1<=max_lines<=2000:
         raise HarnessError('read requires start-line >= 1 and max-lines in 1..2000')
     target=inside(root,path)
-    if not target.is_file() or target.stat().st_size>4*1024*1024:
-        raise HarnessError('source unavailable or exceeds the 4 MiB read limit')
-    lines=target.read_text(encoding='utf-8-sig').splitlines()
-    selected=lines[start_line-1:start_line-1+max_lines]
-    # A single generated source line can be huge: bound response bytes too.
-    used=0;result=[]
-    for line in selected:
-        used+=len(line.encode('utf-8'))
-        if used>128000:break
-        result.append(line)
-    if selected and not result:raise HarnessError('source line exceeds the 128 KiB response limit')
+    if not target.exists():raise HarnessError('source not found: '+path,code='SOURCE_NOT_FOUND')
+    if not target.is_file():raise HarnessError('source is not a regular file: '+path,code='SOURCE_NOT_REGULAR')
+    before=target.stat(); result=[]; used=0; number=0; eof=False
+    try:
+        with target.open('r',encoding='utf-8-sig',newline=None) as stream:
+            if stat_identity(before)!=stat_identity(os.fstat(stream.fileno())):
+                raise HarnessError('source replaced before reading',code='SOURCE_CHANGED')
+            while True:
+                line=stream.readline(128001)
+                if not line:
+                    eof=True;break
+                number+=1
+                if len(line)>128000 and not line.endswith('\n'):
+                    raise HarnessError('source line exceeds the 128 KiB response limit; use read-bytes',
+                                       code='SOURCE_LINE_TOO_LARGE',details={'path':path,'line':number,'next_action':'read-bytes'})
+                if number<start_line:continue
+                value=line.rstrip('\r\n'); size=len(value.encode('utf-8'))
+                if len(result)>=max_lines or used+size>128000:
+                    if not result:raise HarnessError('source line exceeds the 128 KiB response limit; use read-bytes',code='SOURCE_LINE_TOO_LARGE')
+                    break
+                used+=size;result.append(value)
+            ended=os.fstat(stream.fileno())
+    except PermissionError as exc:
+        raise HarnessError('source permission denied: '+path,code='SOURCE_PERMISSION_DENIED') from exc
+    except UnicodeError as exc:
+        raise HarnessError('source is not valid UTF-8; use read-bytes',code='SOURCE_ENCODING_ERROR') from exc
+    after=target.stat()
+    if stat_identity(before)!=stat_identity(ended) or stat_identity(ended)!=stat_identity(after):
+        raise HarnessError('source changed while reading',code='SOURCE_CHANGED')
     end=start_line-1+len(result)
-    return {'path':path,'start_line':start_line,'end_line':end,'total_lines':len(lines),
-            'lines':result,'eof':end>=len(lines),'next_start_line':end+1 if end<len(lines) else None}
+    return {'path':path,'start_line':start_line,'end_line':end,'total_lines':number if eof else None,
+            'lines':result,'eof':eof,'next_start_line':None if eof else end+1,
+            'source_size_bytes':after.st_size,'source_mtime_ns':after.st_mtime_ns}
+
+
+def read_bytes(root: Path, path: str, offset: int = 0, max_bytes: int = 64000) -> dict:
+    """Exact bounded bytes, including huge JSONL lines and non-UTF8 sources."""
+    if type(offset) is not int or offset<0 or type(max_bytes) is not int or not 1<=max_bytes<=128000:
+        raise HarnessError('invalid byte window')
+    target=inside(root,path)
+    if not target.exists():raise HarnessError('source not found: '+path,code='SOURCE_NOT_FOUND')
+    if not target.is_file():raise HarnessError('source is not a regular file',code='SOURCE_NOT_REGULAR')
+    before=target.stat()
+    try:
+        with target.open('rb') as stream:
+            if stat_identity(before)!=stat_identity(os.fstat(stream.fileno())):
+                raise HarnessError('source replaced before reading',code='SOURCE_CHANGED')
+            stream.seek(offset); data=stream.read(max_bytes)
+            ended=os.fstat(stream.fileno())
+    except PermissionError as exc:
+        raise HarnessError('source permission denied',code='SOURCE_PERMISSION_DENIED') from exc
+    after=target.stat()
+    if stat_identity(before)!=stat_identity(ended) or stat_identity(ended)!=stat_identity(after):
+        raise HarnessError('source changed while reading',code='SOURCE_CHANGED')
+    end=offset+len(data)
+    try:text=data.decode('utf-8');encoding='utf-8'
+    except UnicodeError:text=base64.b64encode(data).decode('ascii');encoding='base64'
+    return {'path':path,'offset':offset,'end_offset':end,'source_size_bytes':after.st_size,
+            'data':text,'encoding':encoding,'eof':end>=after.st_size,
+            'next_offset':None if end>=after.st_size else end,'source_mtime_ns':after.st_mtime_ns}

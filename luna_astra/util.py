@@ -10,6 +10,11 @@ from typing import Any
 
 class HarnessError(ValueError):
     """An invalid or unsafe request; callers must not substitute success."""
+    def __init__(self, message: str, *, code: str = "INVALID_REQUEST", details=None):
+        super().__init__(message)
+        self.code = code
+        self.details = details
+
 
 def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -78,14 +83,22 @@ def atomic_write(path: Path, data: bytes) -> None:
 def write_json(path: Path, value: Any) -> None:
     atomic_write(path, (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8"))
 
+def stat_identity(st):
+    """File identity/change metadata, never a substitute for a content digest."""
+    return (st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns,st.st_mode)
+
 def file_hash(path: Path) -> str:
-    before = path.stat()
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1024 * 1024), b""):
+    before=path.stat()
+    h=hashlib.sha256()
+    with path.open('rb') as f:
+        opened=os.fstat(f.fileno())
+        if stat_identity(before)!=stat_identity(opened):
+            raise HarnessError(f"file replaced before fingerprinting: {path}")
+        for block in iter(lambda:f.read(1024*1024),b''):
             h.update(block)
-    after = path.stat()
-    if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
+        ended=os.fstat(f.fileno())
+    after=path.stat()
+    if stat_identity(before)!=stat_identity(ended) or stat_identity(ended)!=stat_identity(after):
         raise HarnessError(f"file changed while fingerprinting: {path}")
     return h.hexdigest()
 

@@ -5,11 +5,11 @@
 </p>
 
 
-## 4.2: less repeated work, same seven members
+## 4.3: less orchestration overhead, same seven members
 
-Research wakes on a result batch or actionable event, not every successful job. New workers receive short assignment references rather than full parent history; the first of the same six verifies an actual Luna hook before the other five. Native V1 and V2 have separate spawn/reuse/wait/identity handling, selected from the actual host tool schema. Report digests, indexed queue reads and deferred redundant scans reduce control traffic. Final acceptance still checks real file bytes.
+Batchflow.3 removes unnecessary read/search hook work, reuses SQLite connections within one synchronous control operation, trims recovery context, wakes active research queues from completed work instead of a fixed one-second delay, and strengthens file-identity checks. The fixed roster remains one root Luna plus the same six persistent Luna children.
 
-No model/reasoning setting is changed. Existing full-context crews are preserved. The scope and safe limits, including native identity requirements, are in [4.2 implementation notes](docs/V4_2_PERFORMANCE.md). Real Windows speed, subscription usage and output quality remain unmeasured.
+No model/reasoning setting is changed. Existing v3/v4 runtime data and unrelated hooks remain protected. See [4.3 release notes](docs/RELEASE_4.3.0.md), the full [changelog](CHANGELOG.md), and the historical [4.2 performance notes](docs/V4_2_PERFORMANCE.md). Real Windows speed, subscription usage and output quality remain live-host measurements rather than release claims.
 
 ## Model isolation retained from 4.1
 
